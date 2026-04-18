@@ -731,3 +731,681 @@ code { font-family: var(--mono); font-size: 12px; background: var(--bg); padding
   .content-area { padding: 16px; }
   .modal-box { max-height: 95vh; }
 }
+/* ═══════════════════════════════════════════════════════════════
+   ENHANCED MOBILE RESPONSIVE
+═══════════════════════════════════════════════════════════════ */
+
+/* Mobile First Improvements */
+@media (max-width: 768px) {
+  /* Better touch targets */
+  button, 
+  .nav-item,
+  .action-btn,
+  .btn,
+  .preview-tab,
+  .modal-close {
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  
+  button:active,
+  .nav-item:active,
+  .action-btn:active {
+    transform: scale(0.97);
+    transition: transform 0.05s;
+  }
+  
+  /* Improved spacing */
+  .content-area {
+    padding: 16px !important;
+  }
+  
+  /* Better form elements for mobile */
+  textarea,
+  input,
+  select {
+    font-size: 16px !important; /* Prevent zoom on focus in iOS */
+  }
+  
+  /* Sidebar improvement */
+  .sidebar {
+    width: 85%;
+    max-width: 280px;
+    box-shadow: 2px 0 20px rgba(0,0,0,0.3);
+  }
+  
+  .sidebar.open {
+    left: 0;
+  }
+  
+  /* Overlay saat sidebar open */
+  .sidebar.open::before {
+    content: '';
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0,0,0,0.5);
+    z-index: -1;
+  }
+  
+  /* Header adjustments */
+  .header {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    background: var(--bg2);
+    backdrop-filter: blur(10px);
+  }
+  
+  /* FTP Monitor cards */
+  .ftp-server-row {
+    margin-bottom: 12px;
+  }
+  
+  .ftp-server-info {
+    gap: 12px;
+  }
+  
+  .ftp-server-info strong {
+    font-size: 14px;
+  }
+  
+  /* Quick actions grid */
+  .actions-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+  }
+  
+  .action-btn {
+    padding: 14px 8px;
+  }
+  
+  .action-btn i {
+    font-size: 22px;
+  }
+  
+  /* History items */
+  .history-item {
+    margin-bottom: 12px;
+  }
+  
+  .item-header {
+    gap: 10px;
+  }
+  
+  .item-status {
+    gap: 8px;
+  }
+  
+  .badge-info,
+  .badge-user,
+  .badge-ftp {
+    padding: 3px 8px;
+    font-size: 9px;
+  }
+  
+  .filename {
+    font-size: 13px;
+    word-break: break-all;
+  }
+  
+  .preview {
+    font-size: 11px;
+    line-height: 1.4;
+  }
+  
+  .item-footer {
+    margin-top: 8px;
+  }
+  
+  /* Modal improvements */
+  .modal-overlay {
+    padding: 0;
+    align-items: flex-end;
+  }
+  
+  .modal-box {
+    max-height: 90vh;
+    border-radius: 20px 20px 0 0;
+    margin: 0;
+    animation: slideUp 0.3s ease;
+  }
+  
+  @keyframes slideUp {
+    from {
+      transform: translateY(100%);
+    }
+    to {
+      transform: translateY(0);
+    }
+  }
+  
+  .modal-header {
+    padding: 16px;
+  }
+  
+  .modal-body {
+    padding: 16px;
+    max-height: 60vh;
+  }
+  
+  .modal-footer {
+    padding: 12px 16px;
+    gap: 10px;
+  }
+  
+  /* Preview tabs scrollable */
+  .preview-tabs {
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    gap: 0;
+    -webkit-overflow-scrolling: touch;
+  }
+  
+  .preview-tab {
+    white-space: nowrap;
+    flex: 0 0 auto;
+  }
+  
+  /* Toast position */
+  .toast {
+    bottom: 20px;
+    left: 16px;
+    right: 16px;
+    width: auto;
+    font-size: 13px;
+    padding: 12px 16px;
+  }
+  
+  /* Footer */
+  .footer {
+    padding: 12px 16px;
+    font-size: 10px;
+  }
+  
+  /* Retry info */
+  .retry-info {
+    font-size: 11px;
+    margin-top: 12px;
+  }
+  
+  /* Filter toolbar */
+  .history-toolbar {
+    gap: 10px;
+  }
+  
+  .filter-input {
+    width: 100%;
+    padding: 10px 12px;
+  }
+  
+  /* Detail grid in modal */
+  .detail-grid {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+  
+  .detail-item {
+    padding: 10px;
+  }
+  
+  /* Settings cards */
+  .settings-card {
+    padding: 14px 16px;
+  }
+  
+  .setting-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 12px 0;
+  }
+  
+  .setting-row code {
+    width: 100%;
+    word-break: break-all;
+  }
+}
+
+/* Small phones (<= 480px) */
+@media (max-width: 480px) {
+  .actions-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .item-meta {
+    flex-direction: column;
+    gap: 6px;
+  }
+  
+  .item-meta span {
+    display: inline-block;
+  }
+  
+  .modal-footer {
+    flex-direction: column;
+  }
+  
+  .modal-footer .btn {
+    width: 100%;
+  }
+  
+  .preview-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+  
+  .btn-sm {
+    width: auto;
+  }
+  
+  .form-actions {
+    gap: 10px;
+  }
+  
+  .form-actions .btn {
+    width: 100%;
+  }
+}
+
+/* Landscape mode on mobile */
+@media (max-width: 768px) and (orientation: landscape) {
+  .sidebar {
+    width: 260px;
+  }
+  
+  .modal-box {
+    max-height: 85vh;
+  }
+  
+  .modal-body {
+    max-height: 55vh;
+  }
+  
+  .preview-content pre,
+  .preview-content textarea {
+    max-height: 200px;
+  }
+  
+  .detail-content pre {
+    max-height: 150px;
+  }
+  
+  .actions-grid {
+    grid-template-columns: repeat(4, 1fr);
+  }
+  
+  .action-btn {
+    padding: 10px 5px;
+  }
+  
+  .action-btn i {
+    font-size: 18px;
+  }
+  
+  .action-btn span {
+    font-size: 10px;
+  }
+}
+
+/* Tablet styles */
+@media (min-width: 769px) and (max-width: 1024px) {
+  .content-area {
+    padding: 20px;
+  }
+  
+  .actions-grid {
+    grid-template-columns: repeat(4, 1fr);
+  }
+  
+  .detail-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  
+  .sidebar {
+    width: 240px;
+  }
+}
+
+/* Smooth scrolling */
+@media (max-width: 768px) {
+  .content-area,
+  .modal-body,
+  .preview-content pre,
+  .preview-content textarea,
+  .detail-content pre {
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+/* Disable hover effects on touch devices */
+@media (hover: none) and (pointer: coarse) {
+  .history-item:hover {
+    transform: none;
+  }
+  
+  .action-btn:hover {
+    transform: none;
+  }
+  
+  .btn:hover {
+    transform: none;
+  }
+  
+  /* Active state instead */
+  .history-item:active {
+    background: var(--bg);
+    transform: scale(0.99);
+  }
+  
+  .action-btn:active {
+    background: var(--primary-dark);
+    color: white;
+  }
+}
+
+/* Loading indicator better on mobile */
+.loading-overlay {
+  backdrop-filter: blur(4px);
+}
+
+.loading-spinner {
+  width: 40px;
+  height: 40px;
+  border-width: 4px;
+}
+
+/* Pull to refresh indicator */
+.pull-to-refresh {
+  text-align: center;
+  padding: 10px;
+  color: var(--text2);
+  font-size: 12px;
+}
+
+/* Better scrollbar on mobile */
+@media (max-width: 768px) {
+  ::-webkit-scrollbar {
+    width: 3px;
+    height: 3px;
+  }
+}
+
+/* Safe area insets for notched phones */
+@supports (padding: max(0px)) {
+  .sidebar {
+    padding-top: max(12px, env(safe-area-inset-top));
+    padding-bottom: max(12px, env(safe-area-inset-bottom));
+  }
+  
+  .modal-box {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  
+  .toast {
+    bottom: max(20px, env(safe-area-inset-bottom));
+    left: max(16px, env(safe-area-inset-left));
+    right: max(16px, env(safe-area-inset-right));
+  }
+}
+/* ═══════════════════════════════════════════════════════════════
+   MOBILE RESPONSIVE FIXES
+═══════════════════════════════════════════════════════════════ */
+
+/* Sidebar overlay */
+.sidebar-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 9996;
+  display: none;
+  cursor: pointer;
+  backdrop-filter: blur(2px);
+}
+
+/* Menu toggle button */
+.menu-toggle {
+  display: none;
+  background: none;
+  border: none;
+  color: var(--text2);
+  font-size: 20px;
+  cursor: pointer;
+  padding: 8px;
+  border-radius: 8px;
+  transition: all 0.15s;
+}
+
+.menu-toggle:hover,
+.menu-toggle:active {
+  background: var(--bg);
+  color: var(--primary);
+}
+
+/* Mobile styles */
+@media (max-width: 768px) {
+  .menu-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  
+  .sidebar {
+    position: fixed;
+    left: -100%;
+    top: 0;
+    height: 100%;
+    z-index: 9997;
+    transition: left 0.3s ease;
+    width: 280px;
+    box-shadow: 2px 0 10px rgba(0, 0, 0, 0.3);
+  }
+  
+  .sidebar.open {
+    left: 0;
+  }
+  
+  /* Content area adjustment */
+  .content-area {
+    padding: 16px !important;
+  }
+  
+  /* Better touch targets */
+  button, 
+  .nav-item,
+  .action-btn,
+  .btn {
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  
+  button:active,
+  .nav-item:active,
+  .action-btn:active {
+    transform: scale(0.97);
+    transition: transform 0.05s;
+  }
+  
+  /* Form elements */
+  textarea,
+  input,
+  select {
+    font-size: 16px !important;
+  }
+  
+  /* Quick actions grid */
+  .actions-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+  }
+  
+  .action-btn {
+    padding: 14px 8px;
+  }
+  
+  .action-btn i {
+    font-size: 22px;
+  }
+  
+  /* History items */
+  .history-item {
+    margin-bottom: 12px;
+  }
+  
+  .item-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+  
+  .item-footer {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+  
+  /* Modal slide up */
+  .modal-overlay {
+    padding: 0;
+    align-items: flex-end;
+  }
+  
+  .modal-box {
+    max-height: 90vh;
+    border-radius: 20px 20px 0 0;
+    margin: 0;
+    animation: slideUp 0.3s ease;
+  }
+  
+  @keyframes slideUp {
+    from {
+      transform: translateY(100%);
+    }
+    to {
+      transform: translateY(0);
+    }
+  }
+  
+  /* Toolbar */
+  .history-toolbar {
+    flex-direction: column;
+    gap: 10px;
+  }
+  
+  .filter-input {
+    width: 100%;
+  }
+  
+  /* Detail grid */
+  .detail-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  /* Form actions */
+  .form-actions {
+    flex-direction: column;
+    gap: 10px;
+  }
+  
+  .form-actions .btn {
+    width: 100%;
+  }
+  
+  /* Toast */
+  .toast {
+    left: 16px;
+    right: 16px;
+    bottom: 20px;
+    width: auto;
+  }
+  
+  /* Footer */
+  .footer {
+    flex-direction: column;
+    gap: 8px;
+    text-align: center;
+  }
+  
+  /* FTP server row */
+  .ftp-server-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+  
+  .ftp-status-text {
+    align-self: flex-end;
+  }
+  
+  /* Modal footer */
+  .modal-footer {
+    flex-direction: column;
+  }
+  
+  .modal-footer .btn {
+    width: 100%;
+  }
+  
+  /* Preview tabs */
+  .preview-tabs {
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    -webkit-overflow-scrolling: touch;
+  }
+  
+  .preview-tab {
+    white-space: nowrap;
+    flex: 0 0 auto;
+  }
+  
+  .preview-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+}
+
+/* Small phones */
+@media (max-width: 480px) {
+  .actions-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .item-meta {
+    flex-direction: column;
+    gap: 4px;
+  }
+  
+  .preview-content pre {
+    font-size: 10px;
+  }
+}
+
+/* Touch feedback */
+.touch-active {
+  opacity: 0.7;
+  transform: scale(0.97);
+  transition: transform 0.05s, opacity 0.05s;
+}
+
+/* Pull to refresh */
+.pull-to-refresh {
+  animation: slideDown 0.3s ease;
+}
+
+@keyframes slideDown {
+  from {
+    transform: translate(-50%, -100%);
+    opacity: 0;
+  }
+  to {
+    transform: translate(-50%, 0);
+    opacity: 1;
+  }
+}

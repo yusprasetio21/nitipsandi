@@ -883,4 +883,209 @@ document.addEventListener("DOMContentLoaded", async () => {
   setTimeout(async () => {
     await testBridgeConnection();
   }, 2000);
+
+  // ========== MOBILE FEATURES ==========
+  initMobileFeatures();
 });
+
+
+// ========== MOBILE MENU IMPROVEMENTS ==========
+function initMobileFeatures() {
+  const sidebar = document.querySelector('.sidebar');
+  const menuToggle = document.getElementById('menu-toggle');
+  const sidebarOverlay = document.getElementById('sidebar-overlay');
+  
+  if (menuToggle && sidebar) {
+    // Toggle sidebar on menu button click
+    menuToggle.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      sidebar.classList.toggle('open');
+      if (sidebarOverlay) {
+        sidebarOverlay.style.display = sidebar.classList.contains('open') ? 'block' : 'none';
+      }
+    });
+    
+    // Close sidebar when clicking overlay
+    if (sidebarOverlay) {
+      sidebarOverlay.addEventListener('click', () => {
+        sidebar.classList.remove('open');
+        sidebarOverlay.style.display = 'none';
+      });
+    }
+    
+    // Close sidebar on navigation (after menu click)
+    const navItems = document.querySelectorAll('.nav-item');
+    navItems.forEach(item => {
+      item.addEventListener('click', () => {
+        if (window.innerWidth <= 768) {
+          setTimeout(() => {
+            sidebar.classList.remove('open');
+            if (sidebarOverlay) sidebarOverlay.style.display = 'none';
+          }, 150);
+        }
+      });
+    });
+    
+    // Close sidebar when clicking outside on mobile
+    document.addEventListener('click', (e) => {
+      if (window.innerWidth <= 768 && sidebar.classList.contains('open')) {
+        if (!sidebar.contains(e.target) && !menuToggle.contains(e.target)) {
+          sidebar.classList.remove('open');
+          if (sidebarOverlay) sidebarOverlay.style.display = 'none';
+        }
+      }
+    });
+    
+    // Prevent body scroll when sidebar is open
+    const observer = new MutationObserver((mutations) => {
+      mutations.forEach((mutation) => {
+        if (mutation.attributeName === 'class') {
+          if (sidebar.classList.contains('open')) {
+            document.body.style.overflow = 'hidden';
+          } else {
+            document.body.style.overflow = '';
+          }
+        }
+      });
+    });
+    
+    observer.observe(sidebar, { attributes: true });
+  }
+  
+  // Add pull-to-refresh on dashboard
+  let touchStart = 0;
+  let touchStartY = 0;
+  const contentArea = document.querySelector('.content-area');
+  
+  if (contentArea) {
+    contentArea.addEventListener('touchstart', (e) => {
+      touchStart = e.touches[0].clientY;
+      touchStartY = contentArea.scrollTop;
+    });
+    
+    contentArea.addEventListener('touchmove', (e) => {
+      const touchEnd = e.touches[0].clientY;
+      const diff = touchEnd - touchStart;
+      
+      if (diff > 60 && touchStartY === 0 && currentPage === 'dashboard') {
+        e.preventDefault();
+        const refreshIndicator = document.createElement('div');
+        refreshIndicator.className = 'pull-to-refresh';
+        refreshIndicator.innerHTML = '<i class="fas fa-sync-alt fa-spin"></i> Refreshing...';
+        refreshIndicator.style.position = 'fixed';
+        refreshIndicator.style.top = '10px';
+        refreshIndicator.style.left = '50%';
+        refreshIndicator.style.transform = 'translateX(-50%)';
+        refreshIndicator.style.background = 'var(--primary)';
+        refreshIndicator.style.color = 'white';
+        refreshIndicator.style.padding = '8px 16px';
+        refreshIndicator.style.borderRadius = '20px';
+        refreshIndicator.style.zIndex = '9999';
+        refreshIndicator.style.fontSize = '12px';
+        document.body.appendChild(refreshIndicator);
+        
+        checkFTP();
+        updateQueueBadge();
+        showToast('🔄 Refreshing data...', 'info');
+        
+        setTimeout(() => {
+          refreshIndicator.remove();
+        }, 1000);
+        
+        touchStart = 0;
+      }
+    });
+  }
+  
+  // Better modal handling on mobile
+  const modals = document.querySelectorAll('.modal-overlay');
+  modals.forEach(modal => {
+    let modalTouchStart = 0;
+    const modalBox = modal.querySelector('.modal-box');
+    
+    if (modalBox && window.innerWidth <= 768) {
+      modalBox.addEventListener('touchstart', (e) => {
+        modalTouchStart = e.touches[0].clientY;
+      });
+      
+      modalBox.addEventListener('touchmove', (e) => {
+        const touchEnd = e.touches[0].clientY;
+        const diff = touchEnd - modalTouchStart;
+        
+        if (diff > 50) {
+          closeModal(modal.id);
+        }
+      });
+    }
+  });
+  
+  // Fix for iOS input zoom
+  const inputs = document.querySelectorAll('input, textarea, select');
+  inputs.forEach(input => {
+    input.addEventListener('focus', () => {
+      if (window.innerWidth <= 768) {
+        setTimeout(() => {
+          input.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }, 300);
+      }
+    });
+  });
+  
+  // Add active state feedback for touch
+  const touchElements = document.querySelectorAll('button, .nav-item, .action-btn, .history-item');
+  touchElements.forEach(el => {
+    el.addEventListener('touchstart', () => {
+      el.classList.add('touch-active');
+    });
+    el.addEventListener('touchend', () => {
+      setTimeout(() => {
+        el.classList.remove('touch-active');
+      }, 100);
+    });
+    el.addEventListener('touchcancel', () => {
+      el.classList.remove('touch-active');
+    });
+  });
+}
+
+// Add CSS for touch feedback (tambahkan ke style.css jika belum ada)
+const touchFeedbackStyle = document.createElement('style');
+touchFeedbackStyle.textContent = `
+  .touch-active {
+    opacity: 0.7;
+    transform: scale(0.97);
+    transition: transform 0.05s, opacity 0.05s;
+  }
+  
+  .pull-to-refresh {
+    animation: slideDown 0.3s ease;
+  }
+  
+  @keyframes slideDown {
+    from {
+      transform: translate(-50%, -100%);
+      opacity: 0;
+    }
+    to {
+      transform: translate(-50%, 0);
+      opacity: 1;
+    }
+  }
+  
+  @media (max-width: 768px) {
+    .modal-box {
+      animation: slideUp 0.3s ease;
+    }
+    
+    @keyframes slideUp {
+      from {
+        transform: translateY(100%);
+      }
+      to {
+        transform: translateY(0);
+      }
+    }
+  }
+`;
+document.head.appendChild(touchFeedbackStyle);

@@ -2,7 +2,10 @@
 <html lang="id" data-theme="dark">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=yes, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="theme-color" content="#0F172A" />
   <title>DDK GTS Web</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
@@ -73,7 +76,7 @@
 
     <!-- Header -->
     <header class="header">
-      <button class="menu-toggle" onclick="document.getElementById('sidebar').classList.toggle('open')">
+      <button class="menu-toggle" id="menu-toggle">
         <i class="fas fa-bars"></i>
       </button>
       <div class="header-title">
@@ -282,6 +285,9 @@ AAXX 18064
   </main>
 </div>
 
+<!-- Sidebar Overlay untuk mobile -->
+<div id="sidebar-overlay" class="sidebar-overlay"></div>
+
 <!-- ════════════════════════════════════════════════════════════════
      MODAL: PREVIEW & EDIT
 ════════════════════════════════════════════════════════════════ -->
@@ -306,7 +312,7 @@ AAXX 18064
       </div>
 
       <!-- Original -->
-      <div class="preview-content active" id="preview-content-original">
+      <div class="preview-content" id="preview-content-original">
         <div class="preview-header">
           <span><span id="original-chars">0</span> chars • <span id="original-lines">0</span> lines</span>
           <button class="btn btn-sm btn-secondary" onclick="copyText('preview-original')"><i class="fas fa-copy"></i></button>
