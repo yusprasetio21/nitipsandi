@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="id" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DDK GTS Web</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<!-- Loading overlay -->
+<div id="loading-overlay" class="loading-overlay">
+  <div class="loading-spinner"></div>
+</div>
+
+<div class="app-layout">
+
+  <!-- ── SIDEBAR ──────────────────────────────────────────────── -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+      <div class="logo">
+        <i class="fas fa-satellite-dish"></i>
+        <div>
+          <h2>DDK GTS</h2>
+          <p class="subtitle">Real-time Transmission</p>
+        </div>
+      </div>
+    </div>
+
+    <nav class="sidebar-nav">
+      <button class="nav-item active" data-tab="dashboard" onclick="switchTab('dashboard')">
+        <i class="fas fa-tachometer-alt"></i><span>Dashboard</span>
+      </button>
+      <button class="nav-item" data-tab="input" onclick="switchTab('input')">
+        <i class="fas fa-edit"></i><span>Input Data</span>
+      </button>
+      <button class="nav-item" data-tab="history" onclick="switchTab('history')">
+        <i class="fas fa-history"></i><span>History</span>
+        <span class="badge" id="badge-queue" style="display:none">0</span>
+      </button>
+      <button class="nav-item" data-tab="settings" onclick="switchTab('settings')">
+        <i class="fas fa-cog"></i><span>Settings</span>
+      </button>
+    </nav>
+
+    <div class="sidebar-footer">
+      <div class="system-status">
+        <div class="status-item">
+          <span class="status-label">FTP Main:</span>
+          <span class="status-value offline" id="sb-ftp1">
+            <i class="fas fa-circle"></i><span>Mengecek</span>
+          </span>
+        </div>
+        <div class="status-item">
+          <span class="status-label">InaSwitching:</span>
+          <span class="status-value offline" id="sb-ftp2">
+            <i class="fas fa-circle"></i><span>Mengecek</span>
+          </span>
+        </div>
+        <div class="status-item">
+          <span class="status-label">Waktu:</span>
+          <span class="status-value clock">--:--:--</span>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ── MAIN CONTENT ─────────────────────────────────────────── -->
+  <main class="main-content">
+
+    <!-- Header -->
+    <header class="header">
+      <button class="menu-toggle" onclick="document.getElementById('sidebar').classList.toggle('open')">
+        <i class="fas fa-bars"></i>
+      </button>
+      <div class="header-title">
+        <h1>DDK Shift GTS</h1>
+        <p id="header-subtitle">Dashboard</p>
+      </div>
+      <div class="header-actions">
+        <button class="theme-btn" onclick="toggleTheme()">
+          <i class="fas fa-sun" id="theme-icon"></i>
+        </button>
+      </div>
+    </header>
+
+    <div class="content-area">
+
+      <!-- ════════════════════════════════════════════════════════
+           SECTION: DASHBOARD
+      ════════════════════════════════════════════════════════ -->
+      <section class="page-section active" id="section-dashboard">
+        <div class="page-header">
+          <h2><i class="fas fa-tachometer-alt"></i> Dashboard</h2>
+          <p>Status FTP & ringkasan sistem</p>
+        </div>
+
+        <!-- FTP Status Box -->
+        <div class="ftp-monitor">
+          <div class="ftp-monitor-title">
+            <i class="fas fa-server"></i> Status FTP Server
+            <button class="btn btn-sm btn-secondary" onclick="checkFTP()">
+              <i class="fas fa-sync-alt"></i> Cek Ulang
+            </button>
+          </div>
+
+          <div class="ftp-server-row">
+            <div class="ftp-server-info">
+              <span class="dot checking" id="dot-ftp1"></span>
+              <div>
+                <strong>FTP Main</strong>
+                <small>172.19.0.202</small>
+              </div>
+            </div>
+            <span id="text-ftp1" class="ftp-status-text">Mengecek...</span>
+          </div>
+
+          <div class="ftp-server-row">
+            <div class="ftp-server-info">
+              <span class="dot checking" id="dot-ftp2"></span>
+              <div>
+                <strong>FTP InaSwitching</strong>
+                <small>172.19.3.230</small>
+              </div>
+            </div>
+            <span id="text-ftp2" class="ftp-status-text">Mengecek...</span>
+          </div>
+
+          <div id="retry-countdown" class="retry-info"></div>
+        </div>
+
+        <!-- Quick Actions -->
+        <div class="quick-actions">
+          <h3><i class="fas fa-bolt"></i> Quick Actions</h3>
+          <div class="actions-grid">
+            <button class="action-btn" onclick="switchTab('input')">
+              <i class="fas fa-plus"></i><span>Input Data</span>
+            </button>
+            <button class="action-btn" onclick="retryPending()">
+              <i class="fas fa-redo"></i><span>Retry Pending</span>
+            </button>
+            <button class="action-btn" onclick="switchTab('history')">
+              <i class="fas fa-history"></i><span>Lihat History</span>
+            </button>
+            <button class="action-btn" onclick="switchTab('settings')">
+              <i class="fas fa-cog"></i><span>Settings</span>
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ════════════════════════════════════════════════════════
+           SECTION: INPUT DATA
+      ════════════════════════════════════════════════════════ -->
+      <section class="page-section" id="section-input">
+        <div class="page-header">
+          <h2><i class="fas fa-edit"></i> Input Data GTS</h2>
+          <p>Paste chat WhatsApp — sistem bersihkan otomatis & cek duplikasi</p>
+        </div>
+
+        <div class="input-section">
+          <!-- Nama petugas -->
+          <div class="form-group">
+            <label class="form-label"><i class="fas fa-user"></i> Nama Petugas</label>
+            <input type="text" id="user-input-field" class="form-input"
+              placeholder="Masukkan nama petugas..." />
+          </div>
+
+          <!-- Textarea input -->
+          <div class="form-group">
+            <div class="form-header">
+              <label class="form-label">
+                <i class="fas fa-comment-alt"></i> Chat WhatsApp
+                <span class="hint">(paste mentah, auto-bersihkan)</span>
+              </label>
+              <div class="char-counter">
+                <span id="char-count">0</span> chars •
+                <span id="line-count">0</span> lines
+              </div>
+            </div>
+            <textarea id="gts-input" rows="14"
+              placeholder="Paste seluruh isi chat WA di sini...
+
+Contoh:
+[4/18, 13:14] +62 813-1121-0371: SMID62 WIII 180600
+AAXX 18064
+96751 32560 72902 10263 20226 39078 40028 57038 85211
+     333 56500 57852 85820 80870=
+
+[4/18, 13:16] +62 851-2312-3967: SMID62WIII 180600
+AAXX 18064
+96791 32560 60503 10338 20253 30033 40083 57024 82111
+     333 56000 82820 84460="></textarea>
+          </div>
+
+          <div class="form-actions">
+            <button class="btn btn-secondary" onclick="document.getElementById('gts-input').value='';updateCharCounter()">
+              <i class="fas fa-trash"></i> Clear
+            </button>
+            <button class="btn btn-secondary" onclick="openPreview()">
+              <i class="fas fa-eye"></i> Preview & Edit
+            </button>
+            <button class="btn btn-primary" id="send-btn" onclick="sendDirect()">
+              <i class="fas fa-paper-plane"></i> Kirim ke FTP
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ════════════════════════════════════════════════════════
+           SECTION: HISTORY
+      ════════════════════════════════════════════════════════ -->
+      <section class="page-section" id="section-history">
+        <div class="page-header">
+          <h2><i class="fas fa-history"></i> History Pengiriman</h2>
+          <p>Riwayat semua petugas — tersimpan di Supabase</p>
+        </div>
+
+        <div class="history-toolbar">
+          <input type="text"   id="filter-search" class="filter-input" placeholder="Cari filename / petugas..." oninput="loadHistory()" />
+          <select              id="filter-status" class="filter-input" onchange="loadHistory()">
+            <option value="">Semua Status</option>
+            <option value="success">Terkirim</option>
+            <option value="pending">Pending</option>
+          </select>
+          <input type="date"   id="filter-date"   class="filter-input" onchange="loadHistory()" />
+          <button class="btn btn-secondary" onclick="loadHistory()"><i class="fas fa-sync-alt"></i></button>
+          <button class="btn btn-primary"   onclick="retryPending()">
+            <i class="fas fa-redo"></i> Retry Semua Pending
+          </button>
+        </div>
+
+        <div id="history-list">
+          <div class="empty-state"><div class="icon">📋</div><p>Pilih tab History untuk memuat data.</p></div>
+        </div>
+      </section>
+
+      <!-- ════════════════════════════════════════════════════════
+           SECTION: SETTINGS
+      ════════════════════════════════════════════════════════ -->
+      <section class="page-section" id="section-settings">
+        <div class="page-header">
+          <h2><i class="fas fa-cog"></i> Settings</h2>
+          <p>Konfigurasi aplikasi</p>
+        </div>
+
+        <div class="settings-card">
+          <h3><i class="fas fa-palette"></i> Tampilan</h3>
+          <div class="setting-row">
+            <span>Theme</span>
+            <button class="btn btn-secondary" onclick="toggleTheme()">
+              <i class="fas fa-adjust"></i> Toggle Dark/Light
+            </button>
+          </div>
+        </div>
+
+        <div class="settings-card">
+          <h3><i class="fas fa-server"></i> Konfigurasi Server</h3>
+          <div class="setting-row"><span>FTP Main</span><code>172.19.0.202</code></div>
+          <div class="setting-row"><span>FTP InaSwitching</span><code>172.19.3.230</code></div>
+          <div class="setting-row"><span>Database</span><code>Supabase (cloud)</code></div>
+          <div class="setting-row"><span>Retry interval</span><code>5 menit</code></div>
+        </div>
+
+        <div class="settings-card">
+          <h3><i class="fas fa-info-circle"></i> Tentang</h3>
+          <div class="setting-row"><span>Versi</span><code>v2.5 (Vercel Edition)</code></div>
+          <div class="setting-row"><span>Database</span><code>Supabase PostgreSQL</code></div>
+          <div class="setting-row"><span>FTP library</span><code>basic-ftp (Node.js)</code></div>
+        </div>
+      </section>
+
+    </div><!-- /content-area -->
+
+    <footer class="footer">
+      <span>DDK GTS Web v2.5 — Vercel + Supabase</span>
+      <span class="clock">--:--:--</span>
+    </footer>
+  </main>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════
+     MODAL: PREVIEW & EDIT
+════════════════════════════════════════════════════════════════ -->
+<div class="modal-overlay" id="preview-modal" style="display:none">
+  <div class="modal-box">
+    <div class="modal-header">
+      <h3><i class="fas fa-edit"></i> Preview & Edit Data</h3>
+      <button class="modal-close" onclick="closeModal('preview-modal')">&times;</button>
+    </div>
+    <div class="modal-body">
+
+      <div class="preview-tabs">
+        <button class="preview-tab" data-tab="original">
+          <i class="fas fa-code"></i> Original
+        </button>
+        <button class="preview-tab active" data-tab="cleaned">
+          <i class="fas fa-broom"></i> Cleaned
+        </button>
+        <button class="preview-tab" data-tab="editable">
+          <i class="fas fa-edit"></i> Edit & Kirim
+        </button>
+      </div>
+
+      <!-- Original -->
+      <div class="preview-content active" id="preview-content-original">
+        <div class="preview-header">
+          <span><span id="original-chars">0</span> chars • <span id="original-lines">0</span> lines</span>
+          <button class="btn btn-sm btn-secondary" onclick="copyText('preview-original')"><i class="fas fa-copy"></i></button>
+        </div>
+        <pre id="preview-original"></pre>
+      </div>
+
+      <!-- Cleaned -->
+      <div class="preview-content active" id="preview-content-cleaned">
+        <div class="preview-header">
+          <span><span id="cleaned-chars">0</span> chars • <span id="cleaned-lines">0</span> lines</span>
+          <button class="btn btn-sm btn-secondary" onclick="copyText('preview-cleaned')"><i class="fas fa-copy"></i></button>
+        </div>
+        <pre id="preview-cleaned"></pre>
+      </div>
+
+      <!-- Editable -->
+      <div class="preview-content" id="preview-content-editable">
+        <div class="preview-header">
+          <span><span id="editable-chars">0</span> chars • <span id="editable-lines">0</span> lines</span>
+          <button class="btn btn-sm btn-secondary" onclick="copyText('preview-editable')"><i class="fas fa-copy"></i></button>
+        </div>
+        <textarea id="preview-editable" rows="12"></textarea>
+      </div>
+
+    </div>
+    <div class="modal-footer">
+      <span class="hint"><i class="fas fa-info-circle"></i> Edit di tab "Edit & Kirim" lalu klik Send</span>
+      <div>
+        <button class="btn btn-secondary" onclick="closeModal('preview-modal')">Batal</button>
+        <button class="btn btn-primary" onclick="sendFromPreview()">
+          <i class="fas fa-paper-plane"></i> Send Edited Data
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════
+     MODAL: HISTORY DETAIL
+════════════════════════════════════════════════════════════════ -->
+<div class="modal-overlay" id="log-modal" style="display:none">
+  <div class="modal-box">
+    <div class="modal-header">
+      <h3><i class="fas fa-info-circle"></i> Detail Log</h3>
+      <button class="modal-close" onclick="closeModal('log-modal')">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="detail-grid">
+        <div class="detail-item"><label>Waktu</label><span id="detail-time"></span></div>
+        <div class="detail-item"><label>Filename</label><code id="detail-filename"></code></div>
+        <div class="detail-item"><label>Status</label><span id="detail-status"></span></div>
+        <div class="detail-item"><label>FTP Target</label><span id="detail-ftp"></span></div>
+        <div class="detail-item"><label>Ukuran</label><span id="detail-size"></span></div>
+        <div class="detail-item"><label>Baris</label><span id="detail-lines"></span></div>
+        <div class="detail-item"><label>Petugas</label><span id="detail-user"></span></div>
+        <div class="detail-item"><label>Catatan</label><span id="detail-note"></span></div>
+        <div class="detail-item detail-full"><label>Sandi terdeteksi</label><span id="detail-sandi"></span></div>
+      </div>
+      <div class="detail-content">
+        <label>Isi File:</label>
+        <pre id="detail-content"></pre>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-primary" id="detail-retry-btn" style="display:none">
+        <i class="fas fa-redo"></i> Kirim Ulang
+      </button>
+      <button class="btn btn-danger" id="detail-delete-btn" onclick="">
+        <i class="fas fa-trash"></i> Hapus
+      </button>
+      <button class="btn btn-secondary" onclick="copyText('detail-content')">
+        <i class="fas fa-copy"></i> Copy Isi
+      </button>
+    </div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
