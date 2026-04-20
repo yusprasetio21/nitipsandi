@@ -15,7 +15,7 @@ const CONFIG = {
 
   // ── BRIDGE (laptop kantor via cloudflared) ────────────────────────
   // Update URL ini setiap kali cloudflared dijalankan ulang
-  BRIDGE_URL:   "https://des-beyond-seems-installed.trycloudflare.com",
+  BRIDGE_URL:   "https://cut-conducted-fisheries-achieving.trycloudflare.com",
   BRIDGE_TOKEN: "DDK_GTS_BRIDGE_2025",
 };
 
