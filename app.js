@@ -237,78 +237,99 @@ async function testBridgeConnection() {
 async function checkFTP() {
   setFTPUI("checking", "checking");
 
-  // Coba bridge langsung dengan token
+  // Coba bridge langsung dengan token (dengan retry)
   if (CONFIG.BRIDGE_URL) {
-    try {
-      console.log(`Checking FTP via bridge: ${CONFIG.BRIDGE_URL}/check`);
-      
-      const res = await fetch(`${CONFIG.BRIDGE_URL}/check`, { 
-        method: "GET",
-        headers: {
-          "x-bridge-token": CONFIG.BRIDGE_TOKEN,
-        },
-        signal: AbortSignal.timeout(8000) 
-      });
-      
-      if (res.ok) {
-        const data = await res.json();
-        console.log("FTP check response:", data);
+    let bridgeAttempt = 0;
+    while (bridgeAttempt < 2) {
+      try {
+        bridgeAttempt++;
+        console.log(`[checkFTP] Bridge attempt ${bridgeAttempt}/2: ${CONFIG.BRIDGE_URL}/check`);
         
-        const wasFtpUp = ftpStatus.ftp1 || ftpStatus.ftp2;
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
         
-        ftpStatus = { 
-          ftp1: data.ftp1 === true, 
-          ftp2: data.ftp2 === true 
-        };
+        const res = await fetch(`${CONFIG.BRIDGE_URL}/check`, { 
+          method: "GET",
+          headers: {
+            "x-bridge-token": CONFIG.BRIDGE_TOKEN,
+          },
+          signal: controller.signal
+        });
         
-        const isFtpUpNow = ftpStatus.ftp1 || ftpStatus.ftp2;
+        clearTimeout(timeoutId);
         
-        setFTPUI(
-          ftpStatus.ftp1 ? "up" : "down", 
-          ftpStatus.ftp2 ? "up" : "down"
-        );
-        
-        isVercel = true;
-        
-        const el = document.getElementById("retry-countdown");
-        if (el && !ftpStatus.ftp1 && !ftpStatus.ftp2) {
-          el.textContent = "⚠️ Kedua FTP offline";
-        } else if (el) {
-          el.textContent = "";
+        if (res.ok) {
+          const data = await res.json();
+          console.log("[checkFTP] Bridge response OK:", data);
+          
+          const wasFtpUp = ftpStatus.ftp1 || ftpStatus.ftp2;
+          
+          ftpStatus = { 
+            ftp1: data.ftp1 === true, 
+            ftp2: data.ftp2 === true 
+          };
+          
+          const isFtpUpNow = ftpStatus.ftp1 || ftpStatus.ftp2;
+          
+          setFTPUI(
+            ftpStatus.ftp1 ? "up" : "down", 
+            ftpStatus.ftp2 ? "up" : "down"
+          );
+          
+          isVercel = true;
+          
+          const el = document.getElementById("retry-countdown");
+          if (el && !ftpStatus.ftp1 && !ftpStatus.ftp2) {
+            el.textContent = "⚠️ Kedua FTP offline";
+          } else if (el) {
+            el.textContent = "";
+          }
+          
+          // ⭐ Auto-trigger retry jika FTP baru online dan ada pending items
+          if (!wasFtpUp && isFtpUpNow) {
+            console.log("[checkFTP] FTP just came online, checking for pending items...");
+            handleFTPOnline();
+          }
+          
+          return isFtpUpNow;
+        } else {
+          console.error(`[checkFTP] Bridge response error: ${res.status} ${res.statusText}`);
+          if (bridgeAttempt < 2) continue; // Retry
+          throw new Error(`HTTP ${res.status}`);
         }
-        
-        // ⭐ Auto-trigger retry jika FTP baru online dan ada pending items
-        if (!wasFtpUp && isFtpUpNow) {
-          console.log("[Auto-Retry] FTP just came online, checking for pending items...");
-          handleFTPOnline();
+      } catch (err) {
+        console.error(`[checkFTP] Bridge attempt ${bridgeAttempt} failed:`, err.message);
+        if (bridgeAttempt < 2) {
+          await new Promise(r => setTimeout(r, 2000)); // Wait 2 sec before retry
+          continue;
         }
-        
-        return isFtpUpNow;
-      } else {
-        console.error(`Bridge check failed: ${res.status}`);
-        throw new Error(`HTTP ${res.status}`);
       }
-    } catch (err) {
-      console.error("Bridge check error:", err);
     }
   }
 
   // Fallback: coba via Vercel serverless
   try {
-    console.log("Fallback: checking via Vercel serverless");
-    const res = await fetch(`${CONFIG.API}?action=check_ftp`);
-    if (!res.ok) throw new Error("no serverless");
+    console.log("[checkFTP] Fallback: trying Vercel serverless");
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
+    
+    const res = await fetch(`${CONFIG.API}?action=check_ftp`, { signal: controller.signal });
+    clearTimeout(timeoutId);
+    
+    if (!res.ok) throw new Error(`Vercel returned ${res.status}`);
     const data = await res.json();
+    
+    console.log("[checkFTP] Vercel response:", data);
     ftpStatus = { ftp1: data.ftp1, ftp2: data.ftp2 };
     setFTPUI(data.ftp1 ? "up" : "down", data.ftp2 ? "up" : "down");
     isVercel = true;
     return data.ftp1 || data.ftp2;
   } catch (err) {
-    console.error("Fallback check failed:", err);
+    console.error("[checkFTP] Fallback failed:", err.message);
     isVercel = false;
     setFTPUI("down", "down");
     const el = document.getElementById("retry-countdown");
-    if (el) el.textContent = "⚠️ Bridge tidak terjangkau — pastikan cloudflared running";
+    if (el) el.textContent = "⚠️ Tidak terhubung ke bridge & Vercel";
     return false;
   }
 }
@@ -485,26 +506,62 @@ async function retryPending() {
   }
 
   const ftpUp = await checkFTP();
-  if (!ftpUp) { showToast("FTP masih offline.", "warn"); return; }
+  if (!ftpUp) { 
+    showToast("FTP masih offline.", "warn"); 
+    return; 
+  }
 
   const pending = await sb.select("upload_history", "select=*&status=eq.pending&order=created_at.asc&limit=100");
-  if (!pending?.length) { showToast("Tidak ada antrian pending.", "info"); return; }
+  if (!pending?.length) { 
+    showToast("Tidak ada antrian pending.", "info"); 
+    return; 
+  }
 
+  console.log(`[retryPending] Starting to send ${pending.length} items...`);
   showToast(`Mengirim ulang ${pending.length} item...`, "info");
   let success = 0;
+  let failed = [];
+  
   for (const item of pending) {
     try {
+      console.log(`[retryPending] Sending item ${item.id}: ${item.filename}`);
+      
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 30000);
+      
       const res = await fetch(`${CONFIG.API}?action=retry`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ historyId: item.id, content: item.content, fileName: item.filename }),
+        signal: controller.signal
       });
-      const d = await res.json();
-      if (d.ok) { success++; }
-    } catch {}
+      
+      clearTimeout(timeoutId);
+      
+      if (res.ok) {
+        const d = await res.json();
+        if (d.ok) { 
+          console.log(`[retryPending] ✅ Item ${item.id} sent successfully`);
+          success++; 
+        } else {
+          console.warn(`[retryPending] ❌ Item ${item.id} FTP failed:`, d);
+          failed.push(item.filename);
+        }
+      } else {
+        console.error(`[retryPending] ❌ Item ${item.id} HTTP ${res.status}`);
+        failed.push(item.filename);
+      }
+    } catch (err) {
+      console.error(`[retryPending] ❌ Item error:`, err.message);
+      failed.push(item.filename);
+    }
   }
 
+  console.log(`[retryPending] Done: ${success}/${pending.length} success, ${failed.length} failed`);
   showToast(`✅ ${success} dari ${pending.length} berhasil dikirim ulang.`, "success");
+  if (failed.length > 0) {
+    console.warn(`[retryPending] Failed items:`, failed);
+  }
   if (success === pending.length) stopRetry();
   loadHistory();
   updateQueueBadge();
@@ -525,6 +582,11 @@ async function retrySingleItem(item) {
   }
 
   try {
+    console.log(`[Retry] Attempting to send item ${item.id}...`);
+    
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+    
     const res = await fetch(`${CONFIG.API}?action=retry`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -533,14 +595,21 @@ async function retrySingleItem(item) {
         content: item.content, 
         fileName: item.filename 
       }),
+      signal: controller.signal
     });
     
+    clearTimeout(timeoutId);
+    
     if (!res.ok) {
-      showToast(`❌ Server error: ${res.status}`, "error");
+      console.error(`[Retry] Server error: ${res.status} ${res.statusText}`);
+      const errorText = await res.text().catch(() => "Unknown error");
+      showToast(`❌ Server error: ${res.status} - ${errorText.substring(0, 50)}`, "error");
       return false;
     }
     
     const d = await res.json();
+    console.log(`[Retry] Response:`, d);
+    
     if (d.ok) {
       showToast("✅ Berhasil dikirim ulang ke FTP!", "success");
       // Update local item status immediately
@@ -551,10 +620,17 @@ async function retrySingleItem(item) {
       updateQueueBadge();
       return true;
     } else {
-      showToast("❌ Pengiriman gagal: FTP masih offline atau error lainnya.", "error");
+      console.error(`[Retry] FTP upload failed:`, d);
+      let errorMsg = "FTP upload gagal";
+      if (!d.ftp1 && !d.ftp2) errorMsg = "Kedua FTP offline";
+      else if (!d.ftp1 && d.ftp2) errorMsg = "FTP Main gagal (InaSwitching OK)";
+      else if (d.ftp1 && !d.ftp2) errorMsg = "InaSwitching gagal (FTP Main OK)";
+      
+      showToast(`❌ ${errorMsg}`, "error");
       return false;
     }
   } catch (err) {
+    console.error(`[Retry] Request error:`, err);
     showToast(`❌ Error: ${err.message}`, "error");
     return false;
   }
@@ -954,11 +1030,19 @@ document.addEventListener("DOMContentLoaded", async () => {
     try {
       const pending = await sb.select("upload_history", "select=id&status=eq.pending&limit=1");
       if (pending?.length > 0) {
+        console.log("[Init] Found pending items, checking FTP...");
         const up = await checkFTP();
-        if (up) await retryPending();
-        else startRetry();
+        if (up) {
+          console.log("[Init] FTP online, starting auto-retry...");
+          await retryPending();
+        } else {
+          console.log("[Init] FTP offline, starting retry timer...");
+          startRetry();
+        }
       }
-    } catch {}
+    } catch (err) {
+      console.error("[Init] Auto-retry check failed:", err);
+    }
   }
 
   // Modal close on outside click & ESC

@@ -133,6 +133,20 @@
           </div>
 
           <div id="retry-countdown" class="retry-info"></div>
+
+          <!-- Troubleshooting Info -->
+          <div style="margin-top: 16px; padding: 12px; background: var(--surface-dim); border-radius: 8px; border-left: 3px solid var(--warning);">
+            <p style="margin: 0; font-size: 12px; color: var(--text-secondary);">
+              <strong>⚠️ Bridge Disconnected?</strong><br/>
+              Jika bridge sering disconnect: buka terminal & jalankan:
+            </p>
+            <code style="display: block; margin-top: 6px; padding: 6px; background: var(--surface); border-radius: 4px; font-size: 11px; overflow-x: auto;">
+              cloudflared tunnel --url http://localhost:3001
+            </code>
+            <p style="margin: 6px 0 0 0; font-size: 11px; color: var(--text-secondary);">
+              Kemudian update URL di <strong>app.js</strong> baris CONFIG.BRIDGE_URL dengan URL baru yang muncul.
+            </p>
+          </div>
         </div>
 
         <!-- Quick Actions -->

@@ -53,17 +53,34 @@ async function sbUpdate(table, matchKey, matchVal, data) {
 }
 
 // ── FTP connect helper ────────────────────────────────────────────
-async function ftpConnect(host, user, pass, port = 21, timeoutMs = 8000) {
+async function ftpConnect(host, user, pass, port = 21, timeoutMs = 15000) {
   const client = new ftp.Client(timeoutMs);
-  await client.access({ host, user, password: pass, port: parseInt(port), secure: false });
-  return client;
+  console.log(`[FTP] Connecting to ${user}@${host}:${port}...`);
+  try {
+    await client.access({ host, user, password: pass, port: parseInt(port), secure: false });
+    console.log(`[FTP] Connected successfully to ${host}`);
+    return client;
+  } catch (err) {
+    console.error(`[FTP] Connection failed to ${host}:`, err.message);
+    throw err;
+  }
 }
 
 // ── Upload file content ke FTP ────────────────────────────────────
 async function ftpUpload(client, content, fileName, ftpPath) {
   const { Readable } = await import("stream");
-  if (ftpPath && ftpPath !== "/") await client.ensureDir(ftpPath);
-  await client.uploadFrom(Readable.from([content]), fileName);
+  try {
+    if (ftpPath && ftpPath !== "/") {
+      console.log(`[FTP] Ensuring directory: ${ftpPath}`);
+      await client.ensureDir(ftpPath);
+    }
+    console.log(`[FTP] Uploading file: ${fileName} (${content.length} bytes)`);
+    await client.uploadFrom(Readable.from([content]), fileName);
+    console.log(`[FTP] Upload completed: ${fileName}`);
+  } catch (err) {
+    console.error(`[FTP] Upload failed for ${fileName}:`, err.message);
+    throw err;
+  }
 }
 
 // ══════════════════════════════════════════════════════════════════
@@ -140,25 +157,33 @@ export default async function handler(req, res) {
     let ftp1Ok = false;
     let ftp2Ok = false;
     let ftpTarget = "";
+    let ftp1Error = "";
+    let ftp2Error = "";
 
     // Upload ke FTP Main
     try {
-      const c = await ftpConnect(process.env.FTP_HOST, process.env.FTP_USER, process.env.FTP_PASS, process.env.FTP_PORT || 21, 12000);
+      console.log("[send] Attempting FTP1 upload...");
+      const c = await ftpConnect(process.env.FTP_HOST, process.env.FTP_USER, process.env.FTP_PASS, process.env.FTP_PORT || 21, 20000);
       await ftpUpload(c, content, fileName, process.env.FTP_PATH || "/");
       c.close();
       ftp1Ok = true;
+      console.log("[send] FTP1 upload successful");
     } catch (e) {
-      console.error("FTP1 error:", e.message);
+      ftp1Error = e.message;
+      console.error("[send] FTP1 error:", ftp1Error);
     }
 
     // Upload ke FTP InaSwitching (selalu coba, bukan fallback)
     try {
-      const c = await ftpConnect(process.env.FTP_HOST_2, process.env.FTP_USER_2, process.env.FTP_PASS_2, process.env.FTP_PORT || 21, 12000);
+      console.log("[send] Attempting FTP2 upload...");
+      const c = await ftpConnect(process.env.FTP_HOST_2, process.env.FTP_USER_2, process.env.FTP_PASS_2, process.env.FTP_PORT || 21, 20000);
       await ftpUpload(c, content, fileName, process.env.FTP_PATH_2 || "/");
       c.close();
       ftp2Ok = true;
+      console.log("[send] FTP2 upload successful");
     } catch (e) {
-      console.error("FTP2 error:", e.message);
+      ftp2Error = e.message;
+      console.error("[send] FTP2 error:", ftp2Error);
     }
 
     const anySuccess = ftp1Ok || ftp2Ok;
@@ -214,33 +239,49 @@ export default async function handler(req, res) {
       return res.status(400).json({ ok: false, error: "Missing params" });
     }
 
+    console.log(`[retry] Retrying file: ${fileName} (history ID: ${historyId})`);
+
     let ftp1Ok = false, ftp2Ok = false;
+    let ftp1Error = "", ftp2Error = "";
 
     try {
-      const c = await ftpConnect(process.env.FTP_HOST, process.env.FTP_USER, process.env.FTP_PASS, process.env.FTP_PORT || 21, 12000);
+      console.log("[retry] Attempting FTP1 upload...");
+      const c = await ftpConnect(process.env.FTP_HOST, process.env.FTP_USER, process.env.FTP_PASS, process.env.FTP_PORT || 21, 20000);
       await ftpUpload(c, content, fileName, process.env.FTP_PATH || "/");
       c.close();
       ftp1Ok = true;
-    } catch {}
+      console.log("[retry] FTP1 upload successful");
+    } catch (err) {
+      ftp1Error = err.message;
+      console.error("[retry] FTP1 error:", ftp1Error);
+    }
 
     try {
-      const c = await ftpConnect(process.env.FTP_HOST_2, process.env.FTP_USER_2, process.env.FTP_PASS_2, process.env.FTP_PORT || 21, 12000);
+      console.log("[retry] Attempting FTP2 upload...");
+      const c = await ftpConnect(process.env.FTP_HOST_2, process.env.FTP_USER_2, process.env.FTP_PASS_2, process.env.FTP_PORT || 21, 20000);
       await ftpUpload(c, content, fileName, process.env.FTP_PATH_2 || "/");
       c.close();
       ftp2Ok = true;
-    } catch {}
+      console.log("[retry] FTP2 upload successful");
+    } catch (err) {
+      ftp2Error = err.message;
+      console.error("[retry] FTP2 error:", ftp2Error);
+    }
 
     const anySuccess = ftp1Ok || ftp2Ok;
 
     if (anySuccess) {
+      console.log(`[retry] ✅ Retry successful (FTP1: ${ftp1Ok}, FTP2: ${ftp2Ok})`);
       await sbUpdate("upload_history", "id", historyId, {
         status: "success",
         note: `Retry sukses (${ftp1Ok && ftp2Ok ? "both" : ftp1Ok ? "main" : "inaswitching"})`,
         ftp_target: ftp1Ok && ftp2Ok ? "both" : ftp1Ok ? "main" : "inaswitching",
       });
+    } else {
+      console.log(`[retry] ❌ Retry failed (FTP1: ${ftp1Error}, FTP2: ${ftp2Error})`);
     }
 
-    return res.status(200).json({ ok: anySuccess, ftp1: ftp1Ok, ftp2: ftp2Ok });
+    return res.status(200).json({ ok: anySuccess, ftp1: ftp1Ok, ftp2: ftp2Ok, ftp1Error, ftp2Error });
   }
 
   // ── DELETE /api/send?action=delete ─────────────────────────────
