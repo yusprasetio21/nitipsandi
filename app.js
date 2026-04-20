@@ -72,6 +72,7 @@ const sb = {
 
 // ── STATE ─────────────────────────────────────────────────────────
 let ftpStatus    = { ftp1: false, ftp2: false };
+let ftpStatusPrevious = { ftp1: false, ftp2: false }; // Untuk detect perubahan status
 let retryTimer   = null;
 let cdTimer      = null;
 let retrySeconds = 0;
@@ -253,10 +254,14 @@ async function checkFTP() {
         const data = await res.json();
         console.log("FTP check response:", data);
         
+        const wasFtpUp = ftpStatus.ftp1 || ftpStatus.ftp2;
+        
         ftpStatus = { 
           ftp1: data.ftp1 === true, 
           ftp2: data.ftp2 === true 
         };
+        
+        const isFtpUpNow = ftpStatus.ftp1 || ftpStatus.ftp2;
         
         setFTPUI(
           ftpStatus.ftp1 ? "up" : "down", 
@@ -272,7 +277,13 @@ async function checkFTP() {
           el.textContent = "";
         }
         
-        return ftpStatus.ftp1 || ftpStatus.ftp2;
+        // ⭐ Auto-trigger retry jika FTP baru online dan ada pending items
+        if (!wasFtpUp && isFtpUpNow) {
+          console.log("[Auto-Retry] FTP just came online, checking for pending items...");
+          handleFTPOnline();
+        }
+        
+        return isFtpUpNow;
       } else {
         console.error(`Bridge check failed: ${res.status}`);
         throw new Error(`HTTP ${res.status}`);
@@ -443,6 +454,30 @@ async function processAndSend(rawText, userInput = "anonymous") {
 // ═══════════════════════════════════════════════════════════════════
 // RETRY PENDING
 // ═══════════════════════════════════════════════════════════════════
+
+// Handle saat FTP status berubah dari offline ke online
+async function handleFTPOnline() {
+  if (!isVercel) return;
+  
+  try {
+    const pending = await sb.select("upload_history", "select=id&status=eq.pending");
+    if (!pending?.length) {
+      console.log("[Auto-Retry] No pending items to send");
+      stopRetry();
+      return;
+    }
+    
+    console.log(`[Auto-Retry] Found ${pending.length} pending items, starting auto-send...`);
+    showToast(`🚀 FTP sudah online! Mengirim ${pending.length} file yang pending...`, "info");
+    
+    // Stop manual retry timer dan langsung kirim
+    stopRetry();
+    await retryPending();
+  } catch (err) {
+    console.error("[Auto-Retry] Error:", err);
+  }
+}
+
 async function retryPending() {
   if (!isVercel) {
     showToast("ℹ️ Retry FTP hanya bisa di Vercel. Di sini data sudah tersimpan di Supabase.", "info");
@@ -475,21 +510,85 @@ async function retryPending() {
   updateQueueBadge();
 }
 
+// Retry single item dengan error handling
+async function retrySingleItem(item) {
+  if (!isVercel) {
+    showToast("❌ Fitur retry hanya tersedia di Vercel.", "error");
+    return false;
+  }
+
+  // Cek FTP terlebih dahulu
+  const ftpUp = await checkFTP();
+  if (!ftpUp) {
+    showToast("❌ FTP masih offline. Silakan coba lagi nanti.", "warn");
+    return false;
+  }
+
+  try {
+    const res = await fetch(`${CONFIG.API}?action=retry`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ 
+        historyId: item.id, 
+        content: item.content, 
+        fileName: item.filename 
+      }),
+    });
+    
+    if (!res.ok) {
+      showToast(`❌ Server error: ${res.status}`, "error");
+      return false;
+    }
+    
+    const d = await res.json();
+    if (d.ok) {
+      showToast("✅ Berhasil dikirim ulang ke FTP!", "success");
+      // Update local item status immediately
+      item.status = "success";
+      item.note = `Retry sukses (${d.ftp1 && d.ftp2 ? "both" : d.ftp1 ? "main" : "inaswitching"})`;
+      item.ftp_target = d.ftp1 && d.ftp2 ? "both" : d.ftp1 ? "main" : "inaswitching";
+      loadHistory();
+      updateQueueBadge();
+      return true;
+    } else {
+      showToast("❌ Pengiriman gagal: FTP masih offline atau error lainnya.", "error");
+      return false;
+    }
+  } catch (err) {
+    showToast(`❌ Error: ${err.message}`, "error");
+    return false;
+  }
+}
+
 function startRetry() {
   stopRetry();
   retrySeconds = CONFIG.RETRY_INTERVAL / 1000;
+  
+  // Set initial countdown text
+  const el = document.getElementById("retry-countdown");
+  if (el) el.textContent = `Akan retry dalam ${Math.floor(CONFIG.RETRY_INTERVAL / 60000)} menit...`;
+  
+  // Show countdown timer
   cdTimer = setInterval(() => {
     retrySeconds--;
     const m = Math.floor(retrySeconds / 60);
     const s = retrySeconds % 60;
     const el = document.getElementById("retry-countdown");
-    if (el) el.textContent = `Retry dalam ${m}:${String(s).padStart(2,"0")}`;
+    if (el) el.textContent = `Akan retry dalam ${m}:${String(s).padStart(2,"0")}`;
     if (retrySeconds <= 0) stopRetry();
   }, 1000);
+  
+  // Set main retry timer
   retryTimer = setTimeout(async () => {
+    console.log("[Retry] Checking FTP status...");
     const up = await checkFTP();
-    if (up) await retryPending();
-    else startRetry();
+    if (up) {
+      console.log("[Retry] FTP online, attempting to send pending items...");
+      await retryPending();
+    } else {
+      console.log("[Retry] FTP still offline, will retry again...");
+      startRetry();
+    }
   }, CONFIG.RETRY_INTERVAL);
 }
 
@@ -601,17 +700,19 @@ function showHistoryDetail(item) {
   if (delBtn) delBtn.onclick = () => deleteHistory(item.id);
 
   if (retryBtn) {
-    retryBtn.style.display = item.status === "pending" && isVercel ? "inline-flex" : "none";
+    retryBtn.style.display = item.status === "pending" ? "inline-flex" : "none";
+    retryBtn.disabled = !isVercel;
+    retryBtn.title = isVercel ? "Kirim ulang ke FTP" : "Fitur hanya tersedia di Vercel";
     retryBtn.onclick = async () => {
-      closeModal("log-modal");
-      const res = await fetch(`${CONFIG.API}?action=retry`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ historyId: item.id, content: item.content, fileName: item.filename }),
-      });
-      const d = await res.json();
-      showToast(d.ok ? "✅ Berhasil dikirim ulang!" : "❌ FTP masih offline.", d.ok ? "success" : "warn");
-      loadHistory();
+      retryBtn.disabled = true;
+      retryBtn.innerHTML = `<i class="fas fa-spinner fa-spin"></i> Mengirim...`;
+      const success = await retrySingleItem(item);
+      if (success) {
+        closeModal("log-modal");
+      } else {
+        retryBtn.disabled = !isVercel;
+        retryBtn.innerHTML = `<i class="fas fa-redo"></i> Kirim Ulang`;
+      }
     };
   }
 
