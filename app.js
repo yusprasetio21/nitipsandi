@@ -83,16 +83,17 @@ let theme        = localStorage.getItem("ddk_theme") || "dark";
 let isVercel     = false;
 
 // ═══════════════════════════════════════════════════════════════════
-// CLEANSING ENGINE — port dari cleanWhatsAppMessages() PHP
+// CLEANSING ENGINE — port dari cleanWhatsAppMessages() PHP (FIXED)
 // ═══════════════════════════════════════════════════════════════════
 function cleanWhatsAppMessages(text) {
   // 1. Hapus timestamp & nama pengirim WA
   const waPatterns = [
     /\[\d{1,2}:\d{2},\s\d{1,2}\/\d{1,2}\/\d{4}\]\s[^:]+:\s*/g,
-    /\[\d{1,2}\/\d{1,2}\/\d{4},\s\d{1,2}:\d{2}(?::\d{2})?\]\s[^:]+:\s*/g,
+    /\[\d{1,2}:\d{2},\s\d{1,2}\/\d{1,2}\/\d{4}\]\s[^:]+:\s*/g,
+    /\[\d{1,2}\/\d{1,2}\/\d{4},\s\d{1,2}:\d{2}\]\s[^:]+:\s*/g,
     /\[\d{4}-\d{1,2}-\d{1,2},\s\d{1,2}:\d{2}\]\s[^:]+:\s*/g,
     /\d{1,2}:\d{2}\s-\s[^:]+:\s*/g,
-    /\[\d{1,2}\/\d{1,2}\/\d{4},\s\d{1,2}:\d{2}\s(?:AM|PM)\]\s[^:]+:\s*/gi,
+    /[^:]+:\s*\[\d{1,2}:\d{2},\s\d{1,2}\/\d{1,2}\/\d{4}\]\s*/g,
   ];
   for (const p of waPatterns) text = text.replace(p, "");
 
@@ -100,34 +101,51 @@ function cleanWhatsAppMessages(text) {
   const metaPatterns = [
     /\s*\(file attached\)\s*/gi,
     /\s*<Media omitted>\s*/gi,
+    /\s*<media omitted>\s*/gi,
     /\s*Gambar tidak disertakan\s*/gi,
     /\s*Audio tidak disertakan\s*/gi,
     /\s*Video tidak disertakan\s*/gi,
     /\s*Dokumen tidak disertakan\s*/gi,
     /\s*Pesan ini telah dihapus\s*/gi,
     /\s*This message was deleted\s*/gi,
+    /\s*‎[^a-zA-Z0-9\s]*\s*/gu,
   ];
   for (const p of metaPatterns) text = text.replace(p, "");
 
   // 3. Normalize line breaks
   text = text.replace(/\r\n|\r/g, "\n");
 
-  // 4. Filter baris — hanya simpan yang terlihat seperti data GTS
+  // 4. Filter baris — pertahankan SMID, MMID, WXREV, AAXX, BBXX, CCXX, 333, dan data GTS
   const lines = text.split("\n");
   const validLines = [];
+  
   for (const raw of lines) {
     const line = raw.trim();
     if (!line) continue;
+    
+    // Skip separator lines
     if (/^[=\-~_*#]+$/.test(line)) continue;
+    
+    // Skip URL
     if (/^https?:\/\//i.test(line)) continue;
+    
+    // POLA YANG DIPERTAHANKAN:
+    // 1. SMID/MMID diikuti kode stasiun (contoh: "SMID52 WIJJ 230000" atau "MMID67 WIOD 230000")
+    // 2. WXREV (contoh: "WXREV 04224")
+    // 3. Data stasiun 5 digit diikuti data (contoh: "96195 03325 21006...")
+    // 4. AAXX/BBXX/CCXX
+    // 5. Baris yang mengandung "333"
+    // 6. Baris yang mengandung "="
     if (
-      /^[A-Z0-9\s=.\/\-]+$/i.test(line) ||
-      /^[A-Z]{4,6}\d{2}/i.test(line)    ||
-      /^\d{5}\s/.test(line)              ||
-      line.includes("=")                 ||
-      line.includes("AAXX")             ||
-      line.includes("BBXX")             ||
-      line.includes("CCXX")             ||
+      /^(SMID|MMID)\d{2}\s+[A-Z]{4}\s+\d{6}/i.test(line) ||  // SMID/MMID
+      /^WXREV\s+\d{5}/i.test(line) ||                          // WXREV
+      /^[A-Z0-9\s=.\/\-]+$/i.test(line) ||                     // Data GTS umum
+      /^[A-Z]{4,6}\d{2}/i.test(line) ||                        // Kode stasiun
+      /^\d{5}\s/.test(line) ||                                 // Data 5 digit
+      line.includes("=") ||
+      line.includes("AAXX") ||
+      line.includes("BBXX") ||
+      line.includes("CCXX") ||
       /^\s*333/.test(line)
     ) {
       validLines.push(line);
@@ -135,31 +153,55 @@ function cleanWhatsAppMessages(text) {
   }
   text = validLines.join("\n");
 
-  // 5. Format khusus GTS — perbaiki posisi "333"
+  // 5. Format khusus GTS — perbaiki posisi "333" dan pisahkan AAXX
   let finalText = "";
   for (const raw of text.split("\n")) {
     const line = raw.trim();
     if (!line) continue;
 
+    // Handle "333" di tengah baris (contoh: "84261 333 56000")
     const m1 = line.match(/^(\d{5}\s+.*?)\s+333\s+(.+)$/);
-    if (m1) { finalText += m1[1] + "\n" + "  333 " + m1[2] + "\n"; continue; }
+    if (m1) { 
+      finalText += m1[1] + "\n" + "  333 " + m1[2] + "\n"; 
+      continue; 
+    }
 
+    // Handle "333" di awal baris
     const m2 = line.match(/^333\s+(.+)$/);
-    if (m2) { finalText += "  333 " + m2[1] + "\n"; continue; }
+    if (m2) { 
+      finalText += "  333 " + m2[1] + "\n"; 
+      continue; 
+    }
+    
+    // Handle "333" tanpa data setelahnya
+    const m2b = line.match(/^(\d{5}\s+.*?)\s+333$/);
+    if (m2b) {
+      finalText += m2b[1] + "\n" + "  333\n";
+      continue;
+    }
 
-    const m3 = line.match(/^([A-Z]{4}\d{2}\s+[A-Z]{4}\s+\d{6})\s+(AAXX\s+\d{5}\s*.*)$/);
-    if (m3) { finalText += m3[1] + "\n" + m3[2] + "\n"; continue; }
+    // Pisahkan AAXX/BBXX/CCXX ke baris terpisah jika digabung dengan kode stasiun
+    const m3 = line.match(/^([A-Z]{4}\d{2}\s+[A-Z]{4}\s+\d{6})\s+(AAXX|BBXX|CCXX\s+\d{5}\s*.*)$/i);
+    if (m3) { 
+      finalText += m3[1] + "\n" + m3[2] + "\n"; 
+      continue; 
+    }
 
     finalText += line + "\n";
   }
 
   // 6. Normalisasi final
   finalText = finalText
-    .replace(/([A-Z]{4}\d{2}\s+[A-Z]{4}\s+\d{6})\s+(AAXX\s+\d{5})/g, "$1\n$2")
+    // Pisahkan AAXX dari kode stasiun
+    .replace(/([A-Z]{4}\d{2}\s+[A-Z]{4}\s+\d{6})\s+(AAXX\s+\d{5})/gi, "$1\n$2")
+    // Normalisasi spasi antar kelompok 5 digit
     .replace(/(\d{5})\s{2,}(\d{5})/g, "$1 $2")
+    // Pastikan "333" memiliki 2 spasi di depan
     .replace(/^\s{1}333\s/gm, "  333 ")
     .replace(/^333\s/gm, "  333 ")
+    // Hapus multiple line breaks
     .replace(/\n{3,}/g, "\n\n")
+    // Pastikan setiap blok diakhiri dengan "=" dan line break
     .replace(/=\s*\n(?!\s*\n)/g, "=\n\n")
     .trim();
 
@@ -168,17 +210,42 @@ function cleanWhatsAppMessages(text) {
 
 function extractSandiList(cleanedText) {
   const sandis = [];
-  for (const line of cleanedText.split("\n")) {
-    const m = line.trim().match(/^([A-Z]{4,6}\d{2})\s/);
-    if (m) sandis.push(m[1]);
+  const lines = cleanedText.split("\n");
+  
+  for (const line of lines) {
+    const trimmed = line.trim();
+    
+    // Skip lines that are not data lines
+    if (!trimmed || trimmed.startsWith('  333') || trimmed.startsWith('AAXX') || 
+        trimmed.startsWith('BBXX') || trimmed.startsWith('CCXX') ||
+        trimmed.startsWith('SMID') || trimmed.startsWith('MMID') ||
+        trimmed.startsWith('WXREV')) {
+      continue;
+    }
+    
+    // Extract sandi dari baris data (biasanya 5 digit atau kode stasiun)
+    // Pola 1: Kode stasiun 5 digit di awal baris (contoh: "96195 01459...")
+    let m = trimmed.match(/^(\d{5})\s/);
+    if (m) {
+      sandis.push(m[1]);
+      continue;
+    }
+    
+    // Pola 2: Kode sandi format WMO (contoh: "WIJJ", "WIOD")
+    m = trimmed.match(/^([A-Z]{4})\s/);
+    if (m && !['AAXX', 'BBXX', 'CCXX'].includes(m[1])) {
+      sandis.push(m[1]);
+      continue;
+    }
+    
+    // Pola 3: Format campuran (contoh: "96737 31450...")
+    m = trimmed.match(/^([A-Z0-9]{5})\s/);
+    if (m && /^\d{5}$/.test(m[1])) {
+      sandis.push(m[1]);
+    }
   }
+  
   return [...new Set(sandis)];
-}
-
-function generateFileName() {
-  const now = new Date();
-  const pad = n => String(n).padStart(2, "0");
-  return `DDK_SHIFT_${now.getUTCFullYear()}${pad(now.getUTCMonth()+1)}${pad(now.getUTCDate())}_${pad(now.getUTCHours())}${pad(now.getUTCMinutes())}${pad(now.getUTCSeconds())}.X`;
 }
 
 // ═══════════════════════════════════════════════════════════════════
