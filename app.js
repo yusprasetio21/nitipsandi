@@ -15,9 +15,23 @@ const CONFIG = {
 
   // ── BRIDGE (laptop kantor via cloudflared) ────────────────────────
   // Update URL ini setiap kali cloudflared dijalankan ulang
-  BRIDGE_URL:   "https://cut-conducted-fisheries-achieving.trycloudflare.com",
+  BRIDGE_URL:   "https://leslie-carrying-considered-roman.trycloudflare.com",
   BRIDGE_TOKEN: "DDK_GTS_BRIDGE_2025",
 };
+
+// ═══════════════════════════════════════════════════════════════════
+// BRIDGE HEADERS HELPER
+// Menambahkan User-Agent agar tidak kena Cloudflare browser check
+// ═══════════════════════════════════════════════════════════════════
+function bridgeHeaders(withToken = false) {
+  const h = {
+    "Content-Type": "application/json",
+    "User-Agent":   "DDK-GTS-Client/1.1",
+    "Accept":       "application/json",
+  };
+  if (withToken) h["x-bridge-token"] = CONFIG.BRIDGE_TOKEN;
+  return h;
+}
 
 // ── SUPABASE CLIENT (browser langsung) ───────────────────────────
 const sb = {
@@ -32,13 +46,13 @@ const sb = {
 
     try {
       const response = await fetch(url, { ...options, headers });
-      
+
       if (!response.ok) {
         const errorText = await response.text();
         console.error('Supabase error:', response.status, errorText);
         throw new Error(`HTTP ${response.status}: ${errorText.substring(0, 100)}`);
       }
-      
+
       return response.status === 204 ? null : await response.json();
     } catch (err) {
       console.error('Supabase request failed:', err);
@@ -71,19 +85,33 @@ const sb = {
 };
 
 // ── STATE ─────────────────────────────────────────────────────────
-let ftpStatus    = { ftp1: false, ftp2: false };
-let ftpStatusPrevious = { ftp1: false, ftp2: false }; // Untuk detect perubahan status
-let retryTimer   = null;
-let cdTimer      = null;
-let retrySeconds = 0;
-let previewOriginal = "";
-let previewCleaned  = "";
-let currentPage  = "dashboard";
-let theme        = localStorage.getItem("ddk_theme") || "dark";
-let isVercel     = false;
+let ftpStatus         = { ftp1: false, ftp2: false };
+let ftpStatusPrevious = { ftp1: false, ftp2: false };
+let retryTimer        = null;
+let cdTimer           = null;
+let retrySeconds      = 0;
+let previewOriginal   = "";
+let previewCleaned    = "";
+let currentPage       = "dashboard";
+let theme             = localStorage.getItem("ddk_theme") || "dark";
+let isVercel          = false;
 
 // ═══════════════════════════════════════════════════════════════════
-// CLEANSING ENGINE — port dari cleanWhatsAppMessages() PHP (FIXED)
+// GENERATE FILENAME
+// ═══════════════════════════════════════════════════════════════════
+function generateFileName() {
+  const now     = new Date();
+  const year    = now.getFullYear();
+  const month   = String(now.getMonth() + 1).padStart(2, '0');
+  const day     = String(now.getDate()).padStart(2, '0');
+  const hours   = String(now.getHours()).padStart(2, '0');
+  const minutes = String(now.getMinutes()).padStart(2, '0');
+  const seconds = String(now.getSeconds()).padStart(2, '0');
+  return `GTS_${year}${month}${day}_${hours}${minutes}${seconds}.txt`;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// CLEANSING ENGINE — port dari cleanWhatsAppMessages() PHP
 // ═══════════════════════════════════════════════════════════════════
 function cleanWhatsAppMessages(text) {
   // 1. Hapus timestamp & nama pengirim WA
@@ -115,33 +143,22 @@ function cleanWhatsAppMessages(text) {
   // 3. Normalize line breaks
   text = text.replace(/\r\n|\r/g, "\n");
 
-  // 4. Filter baris — pertahankan SMID, MMID, WXREV, AAXX, BBXX, CCXX, 333, dan data GTS
+  // 4. Filter baris
   const lines = text.split("\n");
   const validLines = [];
-  
+
   for (const raw of lines) {
     const line = raw.trim();
     if (!line) continue;
-    
-    // Skip separator lines
     if (/^[=\-~_*#]+$/.test(line)) continue;
-    
-    // Skip URL
     if (/^https?:\/\//i.test(line)) continue;
-    
-    // POLA YANG DIPERTAHANKAN:
-    // 1. SMID/MMID diikuti kode stasiun (contoh: "SMID52 WIJJ 230000" atau "MMID67 WIOD 230000")
-    // 2. WXREV (contoh: "WXREV 04224")
-    // 3. Data stasiun 5 digit diikuti data (contoh: "96195 03325 21006...")
-    // 4. AAXX/BBXX/CCXX
-    // 5. Baris yang mengandung "333"
-    // 6. Baris yang mengandung "="
+
     if (
-      /^(SMID|MMID)\d{2}\s+[A-Z]{4}\s+\d{6}/i.test(line) ||  // SMID/MMID
-      /^WXREV\s+\d{5}/i.test(line) ||                          // WXREV
-      /^[A-Z0-9\s=.\/\-]+$/i.test(line) ||                     // Data GTS umum
-      /^[A-Z]{4,6}\d{2}/i.test(line) ||                        // Kode stasiun
-      /^\d{5}\s/.test(line) ||                                 // Data 5 digit
+      /^(SMID|MMID)\d{2}\s+[A-Z]{4}\s+\d{6}/i.test(line) ||
+      /^WXREV\s+\d{5}/i.test(line) ||
+      /^[A-Z0-9\s=.\/\-]+$/i.test(line) ||
+      /^[A-Z]{4,6}\d{2}/i.test(line) ||
+      /^\d{5}\s/.test(line) ||
       line.includes("=") ||
       line.includes("AAXX") ||
       line.includes("BBXX") ||
@@ -153,55 +170,33 @@ function cleanWhatsAppMessages(text) {
   }
   text = validLines.join("\n");
 
-  // 5. Format khusus GTS — perbaiki posisi "333" dan pisahkan AAXX
+  // 5. Format khusus GTS
   let finalText = "";
   for (const raw of text.split("\n")) {
     const line = raw.trim();
     if (!line) continue;
 
-    // Handle "333" di tengah baris (contoh: "84261 333 56000")
     const m1 = line.match(/^(\d{5}\s+.*?)\s+333\s+(.+)$/);
-    if (m1) { 
-      finalText += m1[1] + "\n" + "  333 " + m1[2] + "\n"; 
-      continue; 
-    }
+    if (m1) { finalText += m1[1] + "\n" + "  333 " + m1[2] + "\n"; continue; }
 
-    // Handle "333" di awal baris
     const m2 = line.match(/^333\s+(.+)$/);
-    if (m2) { 
-      finalText += "  333 " + m2[1] + "\n"; 
-      continue; 
-    }
-    
-    // Handle "333" tanpa data setelahnya
-    const m2b = line.match(/^(\d{5}\s+.*?)\s+333$/);
-    if (m2b) {
-      finalText += m2b[1] + "\n" + "  333\n";
-      continue;
-    }
+    if (m2) { finalText += "  333 " + m2[1] + "\n"; continue; }
 
-    // Pisahkan AAXX/BBXX/CCXX ke baris terpisah jika digabung dengan kode stasiun
+    const m2b = line.match(/^(\d{5}\s+.*?)\s+333$/);
+    if (m2b) { finalText += m2b[1] + "\n" + "  333\n"; continue; }
+
     const m3 = line.match(/^([A-Z]{4}\d{2}\s+[A-Z]{4}\s+\d{6})\s+(AAXX|BBXX|CCXX\s+\d{5}\s*.*)$/i);
-    if (m3) { 
-      finalText += m3[1] + "\n" + m3[2] + "\n"; 
-      continue; 
-    }
+    if (m3) { finalText += m3[1] + "\n" + m3[2] + "\n"; continue; }
 
     finalText += line + "\n";
   }
 
-  // 6. Normalisasi final
   finalText = finalText
-    // Pisahkan AAXX dari kode stasiun
     .replace(/([A-Z]{4}\d{2}\s+[A-Z]{4}\s+\d{6})\s+(AAXX\s+\d{5})/gi, "$1\n$2")
-    // Normalisasi spasi antar kelompok 5 digit
     .replace(/(\d{5})\s{2,}(\d{5})/g, "$1 $2")
-    // Pastikan "333" memiliki 2 spasi di depan
     .replace(/^\s{1}333\s/gm, "  333 ")
     .replace(/^333\s/gm, "  333 ")
-    // Hapus multiple line breaks
     .replace(/\n{3,}/g, "\n\n")
-    // Pastikan setiap blok diakhiri dengan "=" dan line break
     .replace(/=\s*\n(?!\s*\n)/g, "=\n\n")
     .trim();
 
@@ -210,41 +205,28 @@ function cleanWhatsAppMessages(text) {
 
 function extractSandiList(cleanedText) {
   const sandis = [];
-  const lines = cleanedText.split("\n");
-  
+  const lines  = cleanedText.split("\n");
+
   for (const line of lines) {
     const trimmed = line.trim();
-    
-    // Skip lines that are not data lines
-    if (!trimmed || trimmed.startsWith('  333') || trimmed.startsWith('AAXX') || 
+
+    if (!trimmed || trimmed.startsWith('  333') || trimmed.startsWith('AAXX') ||
         trimmed.startsWith('BBXX') || trimmed.startsWith('CCXX') ||
         trimmed.startsWith('SMID') || trimmed.startsWith('MMID') ||
         trimmed.startsWith('WXREV')) {
       continue;
     }
-    
-    // Extract sandi dari baris data (biasanya 5 digit atau kode stasiun)
-    // Pola 1: Kode stasiun 5 digit di awal baris (contoh: "96195 01459...")
+
     let m = trimmed.match(/^(\d{5})\s/);
-    if (m) {
-      sandis.push(m[1]);
-      continue;
-    }
-    
-    // Pola 2: Kode sandi format WMO (contoh: "WIJJ", "WIOD")
+    if (m) { sandis.push(m[1]); continue; }
+
     m = trimmed.match(/^([A-Z]{4})\s/);
-    if (m && !['AAXX', 'BBXX', 'CCXX'].includes(m[1])) {
-      sandis.push(m[1]);
-      continue;
-    }
-    
-    // Pola 3: Format campuran (contoh: "96737 31450...")
+    if (m && !['AAXX', 'BBXX', 'CCXX'].includes(m[1])) { sandis.push(m[1]); continue; }
+
     m = trimmed.match(/^([A-Z0-9]{5})\s/);
-    if (m && /^\d{5}$/.test(m[1])) {
-      sandis.push(m[1]);
-    }
+    if (m && /^\d{5}$/.test(m[1])) sandis.push(m[1]);
   }
-  
+
   return [...new Set(sandis)];
 }
 
@@ -256,35 +238,28 @@ async function testBridgeConnection() {
     showToast("Bridge URL tidak dikonfigurasi", "warn");
     return false;
   }
-  
+
   showToast("Mengecek koneksi bridge...", "info");
-  
+
   try {
     console.log(`Testing bridge at: ${CONFIG.BRIDGE_URL}/check`);
-    
+
     const res = await fetch(`${CONFIG.BRIDGE_URL}/check`, {
-      method: "GET",
-      headers: {
-        "x-bridge-token": CONFIG.BRIDGE_TOKEN,
-      },
-      signal: AbortSignal.timeout(5000)
+      method:  "GET",
+      headers: bridgeHeaders(),          // ← pakai helper (dengan User-Agent)
+      signal:  AbortSignal.timeout(8000),
     });
-    
+
     if (res.ok) {
       const data = await res.json();
       console.log("Bridge check response:", data);
-      
+
       let statusMsg = "";
-      if (data.ftp1 && data.ftp2) {
-        statusMsg = "✅ Bridge online - FTP Main dan InaSwitching tersedia";
-      } else if (data.ftp1) {
-        statusMsg = "✅ Bridge online - Hanya FTP Main tersedia";
-      } else if (data.ftp2) {
-        statusMsg = "✅ Bridge online - Hanya InaSwitching tersedia";
-      } else {
-        statusMsg = "⚠️ Bridge online tapi kedua FTP offline";
-      }
-      
+      if (data.ftp1 && data.ftp2)       statusMsg = "✅ Bridge online - FTP Main & InaSwitching OK";
+      else if (data.ftp1)               statusMsg = "✅ Bridge online - Hanya FTP Main tersedia";
+      else if (data.ftp2)               statusMsg = "✅ Bridge online - Hanya InaSwitching tersedia";
+      else                              statusMsg = "⚠️ Bridge online tapi kedua FTP offline";
+
       showToast(statusMsg, data.ftp1 || data.ftp2 ? "success" : "warn");
       return data.ftp1 || data.ftp2;
     } else {
@@ -293,7 +268,15 @@ async function testBridgeConnection() {
     }
   } catch (err) {
     console.error("Bridge test failed:", err);
-    showToast(`❌ Gagal konek ke bridge: ${err.message}`, "error");
+
+    if (err.name === "AbortError") {
+      showToast("❌ Timeout: Bridge tidak merespons dalam 8 detik", "error");
+    } else if (err.message === "Failed to fetch" || err.name === "TypeError") {
+      showToast("❌ CORS / Network Error — cek console untuk detail", "error");
+      console.error("💡 Kemungkinan CORS atau cloudflare block. Pastikan bridge sudah restart dan URL sudah diupdate.");
+    } else {
+      showToast(`❌ Gagal konek ke bridge: ${err.message}`, "error");
+    }
     return false;
   }
 }
@@ -304,88 +287,84 @@ async function testBridgeConnection() {
 async function checkFTP() {
   setFTPUI("checking", "checking");
 
-  // Coba bridge langsung dengan token (dengan retry)
   if (CONFIG.BRIDGE_URL) {
     let bridgeAttempt = 0;
     while (bridgeAttempt < 2) {
       try {
         bridgeAttempt++;
         console.log(`[checkFTP] Bridge attempt ${bridgeAttempt}/2: ${CONFIG.BRIDGE_URL}/check`);
-        
+
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
-        
-        const res = await fetch(`${CONFIG.BRIDGE_URL}/check`, { 
-          method: "GET",
-          headers: {
-            "x-bridge-token": CONFIG.BRIDGE_TOKEN,
-          },
-          signal: controller.signal
+        const timeoutId  = setTimeout(() => controller.abort(), 15000);
+
+        const res = await fetch(`${CONFIG.BRIDGE_URL}/check`, {
+          method:  "GET",
+          headers: bridgeHeaders(),      // ← pakai helper (dengan User-Agent)
+          signal:  controller.signal,
         });
-        
+
         clearTimeout(timeoutId);
-        
+
         if (res.ok) {
           const data = await res.json();
           console.log("[checkFTP] Bridge response OK:", data);
-          
+
           const wasFtpUp = ftpStatus.ftp1 || ftpStatus.ftp2;
-          
-          ftpStatus = { 
-            ftp1: data.ftp1 === true, 
-            ftp2: data.ftp2 === true 
+
+          ftpStatus = {
+            ftp1: data.ftp1 === true,
+            ftp2: data.ftp2 === true,
           };
-          
+
           const isFtpUpNow = ftpStatus.ftp1 || ftpStatus.ftp2;
-          
+
           setFTPUI(
-            ftpStatus.ftp1 ? "up" : "down", 
+            ftpStatus.ftp1 ? "up" : "down",
             ftpStatus.ftp2 ? "up" : "down"
           );
-          
+
           isVercel = true;
-          
+
           const el = document.getElementById("retry-countdown");
           if (el && !ftpStatus.ftp1 && !ftpStatus.ftp2) {
             el.textContent = "⚠️ Kedua FTP offline";
           } else if (el) {
             el.textContent = "";
           }
-          
-          // ⭐ Auto-trigger retry jika FTP baru online dan ada pending items
+
           if (!wasFtpUp && isFtpUpNow) {
             console.log("[checkFTP] FTP just came online, checking for pending items...");
             handleFTPOnline();
           }
-          
+
           return isFtpUpNow;
         } else {
-          console.error(`[checkFTP] Bridge response error: ${res.status} ${res.statusText}`);
-          if (bridgeAttempt < 2) continue; // Retry
+          console.error(`[checkFTP] Bridge response error: ${res.status}`);
+          if (bridgeAttempt < 2) continue;
           throw new Error(`HTTP ${res.status}`);
         }
       } catch (err) {
         console.error(`[checkFTP] Bridge attempt ${bridgeAttempt} failed:`, err.message);
         if (bridgeAttempt < 2) {
-          await new Promise(r => setTimeout(r, 2000)); // Wait 2 sec before retry
+          await new Promise(r => setTimeout(r, 2000));
           continue;
         }
       }
     }
   }
 
-  // Fallback: coba via Vercel serverless
+  // Fallback ke Vercel serverless
   try {
     console.log("[checkFTP] Fallback: trying Vercel serverless");
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000);
-    
+    const timeoutId  = setTimeout(() => controller.abort(), 10000);
+
     const res = await fetch(`${CONFIG.API}?action=check_ftp`, { signal: controller.signal });
     clearTimeout(timeoutId);
-    
+
     if (!res.ok) throw new Error(`Vercel returned ${res.status}`);
     const data = await res.json();
-    
+
     console.log("[checkFTP] Vercel response:", data);
     ftpStatus = { ftp1: data.ftp1, ftp2: data.ftp2 };
     setFTPUI(data.ftp1 ? "up" : "down", data.ftp2 ? "up" : "down");
@@ -403,14 +382,14 @@ async function checkFTP() {
 
 function setFTPUI(s1, s2) {
   const labels = { up: "Online", down: "Offline", checking: "Mengecek..." };
-  const dot1 = document.getElementById("dot-ftp1");
-  const dot2 = document.getElementById("dot-ftp2");
-  const t1   = document.getElementById("text-ftp1");
-  const t2   = document.getElementById("text-ftp2");
+  const dot1   = document.getElementById("dot-ftp1");
+  const dot2   = document.getElementById("dot-ftp2");
+  const t1     = document.getElementById("text-ftp1");
+  const t2     = document.getElementById("text-ftp2");
   if (dot1) dot1.className = `dot ${s1}`;
   if (dot2) dot2.className = `dot ${s2}`;
-  if (t1)  t1.textContent  = labels[s1] || s1;
-  if (t2)  t2.textContent  = labels[s2] || s2;
+  if (t1)   t1.textContent = labels[s1] || s1;
+  if (t2)   t2.textContent = labels[s2] || s2;
 
   ["sb-ftp1","sb-ftp2"].forEach((id, i) => {
     const el = document.getElementById(id);
@@ -452,7 +431,7 @@ async function processAndSend(rawText, userInput = "anonymous") {
       ftp_target:       "",
     };
 
-    const inserted = await sb.insert("upload_history", historyRow);
+    const inserted  = await sb.insert("upload_history", historyRow);
     const historyId = inserted?.[0]?.id;
 
     // Simpan tiap sandi ke gts_messages
@@ -465,43 +444,37 @@ async function processAndSend(rawText, userInput = "anonymous") {
       }).catch(() => {});
     }
 
-    // ── B. Kirim ke FTP via bridge ─────────────────────
+    // ── B. Kirim ke FTP via bridge ────────────────────────────────
     let ftpSuccess = false;
-    let ftpTarget = "";
+    let ftpTarget  = "";
 
     if (CONFIG.BRIDGE_URL) {
       try {
         console.log(`Mencoba mengirim ke bridge: ${CONFIG.BRIDGE_URL}/upload`);
-        
+
         const res = await fetch(`${CONFIG.BRIDGE_URL}/upload`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "x-bridge-token": CONFIG.BRIDGE_TOKEN,
-          },
-          body: JSON.stringify({ 
-            content: cleaned, 
-            fileName: fileName,
-            ftp1: true,
-            ftp2: true
-          }),
-          signal: AbortSignal.timeout(15000),
+          method:  "POST",
+          headers: bridgeHeaders(true),  // ← pakai helper (dengan token & User-Agent)
+          body:    JSON.stringify({ content: cleaned, fileName }),
+          signal:  AbortSignal.timeout(15000),
         });
-        
+
         if (res.ok) {
           const data = await res.json();
           console.log("Bridge response:", data);
-          
-          if (data.success || data.ok) {
+
+          if (data.ok === true || data.ok === undefined) {
             ftpSuccess = true;
-            ftpTarget = data.ftp1 && data.ftp2 ? "Main + InaSwitching" : 
-                       data.ftp1 ? "FTP Main" : 
-                       data.ftp2 ? "InaSwitching" : "FTP Server";
-            
+            ftpTarget  = data.target || (
+              data.ftp1 && data.ftp2 ? "both" :
+              data.ftp1 ? "main" :
+              data.ftp2 ? "inaswitching" : "FTP Server"
+            );
+
             if (historyId) {
               await sb.update("upload_history", historyId, {
-                status: "success",
-                note: `Uploaded ke FTP (${ftpTarget})`,
+                status:     "success",
+                note:       `Uploaded ke FTP (${ftpTarget})`,
                 ftp_target: ftpTarget,
               });
             }
@@ -520,17 +493,21 @@ async function processAndSend(rawText, userInput = "anonymous") {
         }
       } catch (e) {
         console.error("Bridge connection error:", e);
-        showToast(`⚠️ Tidak bisa konek ke bridge: ${e.message} — data tersimpan pending.`, "warn");
+        if (e.name === "AbortError") {
+          showToast("⚠️ Bridge timeout — data tersimpan pending.", "warn");
+        } else {
+          showToast(`⚠️ Tidak bisa konek ke bridge: ${e.message} — data tersimpan pending.`, "warn");
+        }
         startRetry();
       }
     } else {
-      showToast(`⚠️ Bridge URL tidak dikonfigurasi — data tersimpan di Supabase (pending).`, "warn");
+      showToast("⚠️ Bridge URL tidak dikonfigurasi — data tersimpan di Supabase (pending).", "warn");
       startRetry();
     }
 
     loadHistory();
     updateQueueBadge();
-    
+
   } catch (err) {
     showToast("❌ Error: " + err.message, "error");
     console.error(err);
@@ -542,11 +519,9 @@ async function processAndSend(rawText, userInput = "anonymous") {
 // ═══════════════════════════════════════════════════════════════════
 // RETRY PENDING
 // ═══════════════════════════════════════════════════════════════════
-
-// Handle saat FTP status berubah dari offline ke online
 async function handleFTPOnline() {
   if (!isVercel) return;
-  
+
   try {
     const pending = await sb.select("upload_history", "select=id&status=eq.pending");
     if (!pending?.length) {
@@ -554,11 +529,10 @@ async function handleFTPOnline() {
       stopRetry();
       return;
     }
-    
+
     console.log(`[Auto-Retry] Found ${pending.length} pending items, starting auto-send...`);
     showToast(`🚀 FTP sudah online! Mengirim ${pending.length} file yang pending...`, "info");
-    
-    // Stop manual retry timer dan langsung kirim
+
     stopRetry();
     await retryPending();
   } catch (err) {
@@ -573,43 +547,38 @@ async function retryPending() {
   }
 
   const ftpUp = await checkFTP();
-  if (!ftpUp) { 
-    showToast("FTP masih offline.", "warn"); 
-    return; 
-  }
+  if (!ftpUp) { showToast("FTP masih offline.", "warn"); return; }
 
   const pending = await sb.select("upload_history", "select=*&status=eq.pending&order=created_at.asc&limit=100");
-  if (!pending?.length) { 
-    showToast("Tidak ada antrian pending.", "info"); 
-    return; 
-  }
+  if (!pending?.length) { showToast("Tidak ada antrian pending.", "info"); return; }
 
   console.log(`[retryPending] Starting to send ${pending.length} items...`);
   showToast(`Mengirim ulang ${pending.length} item...`, "info");
+
   let success = 0;
-  let failed = [];
-  
+  let failed  = [];
+
   for (const item of pending) {
     try {
       console.log(`[retryPending] Sending item ${item.id}: ${item.filename}`);
-      
+
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 30000);
-      
+      const timeoutId  = setTimeout(() => controller.abort(), 30000);
+
       const res = await fetch(`${CONFIG.API}?action=retry`, {
-        method: "POST",
+        method:  "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ historyId: item.id, content: item.content, fileName: item.filename }),
-        signal: controller.signal
+        body:    JSON.stringify({ historyId: item.id, content: item.content, fileName: item.filename }),
+        signal:  controller.signal,
       });
-      
+
       clearTimeout(timeoutId);
-      
+
       if (res.ok) {
         const d = await res.json();
-        if (d.ok) { 
+        if (d.ok) {
           console.log(`[retryPending] ✅ Item ${item.id} sent successfully`);
-          success++; 
+          success++;
         } else {
           console.warn(`[retryPending] ❌ Item ${item.id} FTP failed:`, d);
           failed.push(item.filename);
@@ -626,22 +595,18 @@ async function retryPending() {
 
   console.log(`[retryPending] Done: ${success}/${pending.length} success, ${failed.length} failed`);
   showToast(`✅ ${success} dari ${pending.length} berhasil dikirim ulang.`, "success");
-  if (failed.length > 0) {
-    console.warn(`[retryPending] Failed items:`, failed);
-  }
+  if (failed.length > 0) console.warn(`[retryPending] Failed items:`, failed);
   if (success === pending.length) stopRetry();
   loadHistory();
   updateQueueBadge();
 }
 
-// Retry single item dengan error handling
 async function retrySingleItem(item) {
   if (!isVercel) {
     showToast("❌ Fitur retry hanya tersedia di Vercel.", "error");
     return false;
   }
 
-  // Cek FTP terlebih dahulu
   const ftpUp = await checkFTP();
   if (!ftpUp) {
     showToast("❌ FTP masih offline. Silakan coba lagi nanti.", "warn");
@@ -650,49 +615,41 @@ async function retrySingleItem(item) {
 
   try {
     console.log(`[Retry] Attempting to send item ${item.id}...`);
-    
+
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
-    
+    const timeoutId  = setTimeout(() => controller.abort(), 30000);
+
     const res = await fetch(`${CONFIG.API}?action=retry`, {
-      method: "POST",
+      method:  "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ 
-        historyId: item.id, 
-        content: item.content, 
-        fileName: item.filename 
-      }),
-      signal: controller.signal
+      body:    JSON.stringify({ historyId: item.id, content: item.content, fileName: item.filename }),
+      signal:  controller.signal,
     });
-    
+
     clearTimeout(timeoutId);
-    
+
     if (!res.ok) {
-      console.error(`[Retry] Server error: ${res.status} ${res.statusText}`);
-      const errorText = await res.text().catch(() => "Unknown error");
-      showToast(`❌ Server error: ${res.status} - ${errorText.substring(0, 50)}`, "error");
+      console.error(`[Retry] Server error: ${res.status}`);
+      showToast(`❌ Server error: ${res.status}`, "error");
       return false;
     }
-    
+
     const d = await res.json();
     console.log(`[Retry] Response:`, d);
-    
+
     if (d.ok) {
       showToast("✅ Berhasil dikirim ulang ke FTP!", "success");
-      // Update local item status immediately
-      item.status = "success";
-      item.note = `Retry sukses (${d.ftp1 && d.ftp2 ? "both" : d.ftp1 ? "main" : "inaswitching"})`;
+      item.status     = "success";
+      item.note       = `Retry sukses (${d.ftp1 && d.ftp2 ? "both" : d.ftp1 ? "main" : "inaswitching"})`;
       item.ftp_target = d.ftp1 && d.ftp2 ? "both" : d.ftp1 ? "main" : "inaswitching";
       loadHistory();
       updateQueueBadge();
       return true;
     } else {
-      console.error(`[Retry] FTP upload failed:`, d);
       let errorMsg = "FTP upload gagal";
-      if (!d.ftp1 && !d.ftp2) errorMsg = "Kedua FTP offline";
-      else if (!d.ftp1 && d.ftp2) errorMsg = "FTP Main gagal (InaSwitching OK)";
-      else if (d.ftp1 && !d.ftp2) errorMsg = "InaSwitching gagal (FTP Main OK)";
-      
+      if (!d.ftp1 && !d.ftp2)      errorMsg = "Kedua FTP offline";
+      else if (!d.ftp1 && d.ftp2)  errorMsg = "FTP Main gagal (InaSwitching OK)";
+      else if (d.ftp1 && !d.ftp2)  errorMsg = "InaSwitching gagal (FTP Main OK)";
       showToast(`❌ ${errorMsg}`, "error");
       return false;
     }
@@ -706,22 +663,19 @@ async function retrySingleItem(item) {
 function startRetry() {
   stopRetry();
   retrySeconds = CONFIG.RETRY_INTERVAL / 1000;
-  
-  // Set initial countdown text
+
   const el = document.getElementById("retry-countdown");
   if (el) el.textContent = `Akan retry dalam ${Math.floor(CONFIG.RETRY_INTERVAL / 60000)} menit...`;
-  
-  // Show countdown timer
+
   cdTimer = setInterval(() => {
     retrySeconds--;
-    const m = Math.floor(retrySeconds / 60);
-    const s = retrySeconds % 60;
+    const m  = Math.floor(retrySeconds / 60);
+    const s  = retrySeconds % 60;
     const el = document.getElementById("retry-countdown");
     if (el) el.textContent = `Akan retry dalam ${m}:${String(s).padStart(2,"0")}`;
     if (retrySeconds <= 0) stopRetry();
   }, 1000);
-  
-  // Set main retry timer
+
   retryTimer = setTimeout(async () => {
     console.log("[Retry] Checking FTP status...");
     const up = await checkFTP();
@@ -811,49 +765,49 @@ function showHistoryDetail(item) {
   const modal = document.getElementById("log-modal");
   if (!modal) return;
   const sandiList = Array.isArray(item.sandi_list) ? item.sandi_list : [];
-  
-  const timeEl = modal.querySelector("#detail-time");
+
+  const timeEl     = modal.querySelector("#detail-time");
   const filenameEl = modal.querySelector("#detail-filename");
-  const statusEl = modal.querySelector("#detail-status");
-  const sizeEl = modal.querySelector("#detail-size");
-  const linesEl = modal.querySelector("#detail-lines");
-  const noteEl = modal.querySelector("#detail-note");
-  const userEl = modal.querySelector("#detail-user");
-  const ftpEl = modal.querySelector("#detail-ftp");
-  const sandiEl = modal.querySelector("#detail-sandi");
-  const contentEl = modal.querySelector("#detail-content");
-  
-  if (timeEl) timeEl.textContent = formatDate(item.created_at);
+  const statusEl   = modal.querySelector("#detail-status");
+  const sizeEl     = modal.querySelector("#detail-size");
+  const linesEl    = modal.querySelector("#detail-lines");
+  const noteEl     = modal.querySelector("#detail-note");
+  const userEl     = modal.querySelector("#detail-user");
+  const ftpEl      = modal.querySelector("#detail-ftp");
+  const sandiEl    = modal.querySelector("#detail-sandi");
+  const contentEl  = modal.querySelector("#detail-content");
+
+  if (timeEl)     timeEl.textContent     = formatDate(item.created_at);
   if (filenameEl) filenameEl.textContent = item.filename;
   if (statusEl) {
     statusEl.textContent = item.status?.toUpperCase();
-    statusEl.className = `status-${item.status}`;
+    statusEl.className   = `status-${item.status}`;
   }
-  if (sizeEl) sizeEl.textContent = `${((item.file_size||0)/1024).toFixed(2)} KB`;
-  if (linesEl) linesEl.textContent = `${item.lines_count} lines`;
-  if (noteEl) noteEl.textContent = item.note || "-";
-  if (userEl) userEl.textContent = item.user_input || "-";
-  if (ftpEl) ftpEl.textContent = item.ftp_target || "-";
-  if (sandiEl) sandiEl.textContent = sandiList.join(", ") || "-";
+  if (sizeEl)    sizeEl.textContent    = `${((item.file_size||0)/1024).toFixed(2)} KB`;
+  if (linesEl)   linesEl.textContent   = `${item.lines_count} lines`;
+  if (noteEl)    noteEl.textContent    = item.note || "-";
+  if (userEl)    userEl.textContent    = item.user_input || "-";
+  if (ftpEl)     ftpEl.textContent     = item.ftp_target || "-";
+  if (sandiEl)   sandiEl.textContent   = sandiList.join(", ") || "-";
   if (contentEl) contentEl.textContent = item.content || "";
 
-  const delBtn = modal.querySelector("#detail-delete-btn");
+  const delBtn   = modal.querySelector("#detail-delete-btn");
   const retryBtn = modal.querySelector("#detail-retry-btn");
 
   if (delBtn) delBtn.onclick = () => deleteHistory(item.id);
 
   if (retryBtn) {
     retryBtn.style.display = item.status === "pending" ? "inline-flex" : "none";
-    retryBtn.disabled = !isVercel;
-    retryBtn.title = isVercel ? "Kirim ulang ke FTP" : "Fitur hanya tersedia di Vercel";
-    retryBtn.onclick = async () => {
+    retryBtn.disabled      = !isVercel;
+    retryBtn.title         = isVercel ? "Kirim ulang ke FTP" : "Fitur hanya tersedia di Vercel";
+    retryBtn.onclick       = async () => {
       retryBtn.disabled = true;
       retryBtn.innerHTML = `<i class="fas fa-spinner fa-spin"></i> Mengirim...`;
       const success = await retrySingleItem(item);
       if (success) {
         closeModal("log-modal");
       } else {
-        retryBtn.disabled = !isVercel;
+        retryBtn.disabled  = !isVercel;
         retryBtn.innerHTML = `<i class="fas fa-redo"></i> Kirim Ulang`;
       }
     };
@@ -879,8 +833,8 @@ async function updateQueueBadge(count = null) {
   }
   const badge = document.getElementById("badge-queue");
   if (badge) {
-    badge.textContent = count;
-    badge.style.display = count > 0 ? "inline-block" : "none";
+    badge.textContent    = count;
+    badge.style.display  = count > 0 ? "inline-block" : "none";
   }
 }
 
@@ -904,7 +858,7 @@ function openPreview() {
 
   const editEl = document.getElementById("preview-editable");
   if (editEl) {
-    editEl.value = previewCleaned;
+    editEl.value   = previewCleaned;
     editEl.oninput = () => setPreviewStats("editable", editEl.value);
   }
   setPreviewStats("editable", previewCleaned);
@@ -923,9 +877,9 @@ function setPreviewStats(prefix, text) {
 function switchPreviewTab(tab) {
   document.querySelectorAll(".preview-tab").forEach(t => t.classList.remove("active"));
   document.querySelectorAll(".preview-content").forEach(c => c.classList.remove("active"));
-  const tabBtn = document.querySelector(`.preview-tab[data-tab="${tab}"]`);
+  const tabBtn  = document.querySelector(`.preview-tab[data-tab="${tab}"]`);
   const content = document.getElementById(`preview-content-${tab}`);
-  if (tabBtn) tabBtn.classList.add("active");
+  if (tabBtn)  tabBtn.classList.add("active");
   if (content) content.classList.add("active");
 }
 
@@ -981,7 +935,7 @@ function toggleTheme() {
 function setLoading(on) {
   const btn = document.getElementById("send-btn");
   if (btn) {
-    btn.disabled = on;
+    btn.disabled  = on;
     btn.innerHTML = on
       ? `<i class="fas fa-spinner fa-spin"></i> Mengirim...`
       : `<i class="fas fa-paper-plane"></i> Kirim ke FTP`;
@@ -1003,7 +957,7 @@ function updateCharCounter() {
 }
 
 function copyText(id) {
-  const el = document.getElementById(id);
+  const el   = document.getElementById(id);
   const text = el?.textContent || el?.value || "";
   navigator.clipboard.writeText(text).then(() => showToast("Disalin!", "success"));
 }
@@ -1011,9 +965,9 @@ function copyText(id) {
 function showToast(msg, type = "info") {
   const existing = document.querySelector(".toast:not(#auto-toast)");
   if (existing) existing.remove();
-  
+
   const icons = { success: "check-circle", error: "exclamation-circle", warn: "exclamation-triangle", info: "info-circle" };
-  const t = document.createElement("div");
+  const t     = document.createElement("div");
   t.className = `toast toast-${type}`;
   t.innerHTML = `<i class="fas fa-${icons[type]||"info-circle"}"></i><span>${msg}</span><button onclick="this.parentElement.remove()">×</button>`;
   document.body.appendChild(t);
@@ -1048,20 +1002,178 @@ function addTestButton() {
   if (dashboard) {
     const existingBtn = document.getElementById("test-bridge-btn");
     if (existingBtn) return;
-    
-    const testBtn = document.createElement("button");
-    testBtn.id = "test-bridge-btn";
-    testBtn.innerHTML = '<i class="fas fa-plug"></i> Test Bridge';
-    testBtn.className = "btn-secondary";
+
+    const testBtn      = document.createElement("button");
+    testBtn.id         = "test-bridge-btn";
+    testBtn.innerHTML  = '<i class="fas fa-plug"></i> Test Bridge';
+    testBtn.className  = "btn-secondary";
     testBtn.style.marginLeft = "10px";
-    testBtn.onclick = testBridgeConnection;
-    
+    testBtn.onclick    = testBridgeConnection;
+
     const sendBtn = document.getElementById("send-btn");
     if (sendBtn && sendBtn.parentNode) {
       sendBtn.parentNode.insertBefore(testBtn, sendBtn.nextSibling);
     }
   }
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// MOBILE FEATURES
+// ═══════════════════════════════════════════════════════════════════
+function initMobileFeatures() {
+  const sidebar        = document.querySelector('.sidebar');
+  const menuToggle     = document.getElementById('menu-toggle');
+  const sidebarOverlay = document.getElementById('sidebar-overlay');
+
+  if (menuToggle && sidebar) {
+    menuToggle.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      sidebar.classList.toggle('open');
+      if (sidebarOverlay) {
+        sidebarOverlay.style.display = sidebar.classList.contains('open') ? 'block' : 'none';
+      }
+    });
+
+    if (sidebarOverlay) {
+      sidebarOverlay.addEventListener('click', () => {
+        sidebar.classList.remove('open');
+        sidebarOverlay.style.display = 'none';
+      });
+    }
+
+    const navItems = document.querySelectorAll('.nav-item');
+    navItems.forEach(item => {
+      item.addEventListener('click', () => {
+        if (window.innerWidth <= 768) {
+          setTimeout(() => {
+            sidebar.classList.remove('open');
+            if (sidebarOverlay) sidebarOverlay.style.display = 'none';
+          }, 150);
+        }
+      });
+    });
+
+    document.addEventListener('click', (e) => {
+      if (window.innerWidth <= 768 && sidebar.classList.contains('open')) {
+        if (!sidebar.contains(e.target) && !menuToggle.contains(e.target)) {
+          sidebar.classList.remove('open');
+          if (sidebarOverlay) sidebarOverlay.style.display = 'none';
+        }
+      }
+    });
+
+    const observer = new MutationObserver((mutations) => {
+      mutations.forEach((mutation) => {
+        if (mutation.attributeName === 'class') {
+          document.body.style.overflow = sidebar.classList.contains('open') ? 'hidden' : '';
+        }
+      });
+    });
+    observer.observe(sidebar, { attributes: true });
+  }
+
+  let touchStart  = 0;
+  let touchStartY = 0;
+  const contentArea = document.querySelector('.content-area');
+
+  if (contentArea) {
+    contentArea.addEventListener('touchstart', (e) => {
+      touchStart  = e.touches[0].clientY;
+      touchStartY = contentArea.scrollTop;
+    });
+
+    contentArea.addEventListener('touchmove', (e) => {
+      const touchEnd = e.touches[0].clientY;
+      const diff     = touchEnd - touchStart;
+
+      if (diff > 60 && touchStartY === 0 && currentPage === 'dashboard') {
+        e.preventDefault();
+        const refreshIndicator             = document.createElement('div');
+        refreshIndicator.className         = 'pull-to-refresh';
+        refreshIndicator.innerHTML         = '<i class="fas fa-sync-alt fa-spin"></i> Refreshing...';
+        refreshIndicator.style.position   = 'fixed';
+        refreshIndicator.style.top        = '10px';
+        refreshIndicator.style.left       = '50%';
+        refreshIndicator.style.transform  = 'translateX(-50%)';
+        refreshIndicator.style.background = 'var(--primary)';
+        refreshIndicator.style.color      = 'white';
+        refreshIndicator.style.padding    = '8px 16px';
+        refreshIndicator.style.borderRadius = '20px';
+        refreshIndicator.style.zIndex     = '9999';
+        refreshIndicator.style.fontSize   = '12px';
+        document.body.appendChild(refreshIndicator);
+
+        checkFTP();
+        updateQueueBadge();
+        showToast('🔄 Refreshing data...', 'info');
+
+        setTimeout(() => { refreshIndicator.remove(); }, 1000);
+        touchStart = 0;
+      }
+    });
+  }
+
+  const modals = document.querySelectorAll('.modal-overlay');
+  modals.forEach(modal => {
+    let modalTouchStart = 0;
+    const modalBox      = modal.querySelector('.modal-box');
+
+    if (modalBox && window.innerWidth <= 768) {
+      modalBox.addEventListener('touchstart', (e) => {
+        modalTouchStart = e.touches[0].clientY;
+      });
+      modalBox.addEventListener('touchmove', (e) => {
+        const touchEnd = e.touches[0].clientY;
+        const diff     = touchEnd - modalTouchStart;
+        if (diff > 50) closeModal(modal.id);
+      });
+    }
+  });
+
+  const inputs = document.querySelectorAll('input, textarea, select');
+  inputs.forEach(input => {
+    input.addEventListener('focus', () => {
+      if (window.innerWidth <= 768) {
+        setTimeout(() => {
+          input.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }, 300);
+      }
+    });
+  });
+
+  const touchElements = document.querySelectorAll('button, .nav-item, .action-btn, .history-item');
+  touchElements.forEach(el => {
+    el.addEventListener('touchstart',  () => { el.classList.add('touch-active'); });
+    el.addEventListener('touchend',    () => { setTimeout(() => el.classList.remove('touch-active'), 100); });
+    el.addEventListener('touchcancel', () => { el.classList.remove('touch-active'); });
+  });
+}
+
+// CSS untuk touch feedback
+const touchFeedbackStyle     = document.createElement('style');
+touchFeedbackStyle.textContent = `
+  .touch-active {
+    opacity: 0.7;
+    transform: scale(0.97);
+    transition: transform 0.05s, opacity 0.05s;
+  }
+  .pull-to-refresh {
+    animation: slideDown 0.3s ease;
+  }
+  @keyframes slideDown {
+    from { transform: translate(-50%, -100%); opacity: 0; }
+    to   { transform: translate(-50%, 0);     opacity: 1; }
+  }
+  @media (max-width: 768px) {
+    .modal-box { animation: slideUp 0.3s ease; }
+    @keyframes slideUp {
+      from { transform: translateY(100%); }
+      to   { transform: translateY(0);    }
+    }
+  }
+`;
+document.head.appendChild(touchFeedbackStyle);
 
 // ═══════════════════════════════════════════════════════════════════
 // INIT
@@ -1130,214 +1242,12 @@ document.addEventListener("DOMContentLoaded", async () => {
     const lo = document.getElementById("loading-overlay");
     if (lo) { lo.style.opacity = "0"; setTimeout(() => lo.remove(), 300); }
   }, 300);
-  
+
   // Test bridge otomatis setelah 2 detik
   setTimeout(async () => {
     await testBridgeConnection();
   }, 2000);
 
-  // ========== MOBILE FEATURES ==========
+  // Mobile features
   initMobileFeatures();
 });
-
-
-// ========== MOBILE MENU IMPROVEMENTS ==========
-function initMobileFeatures() {
-  const sidebar = document.querySelector('.sidebar');
-  const menuToggle = document.getElementById('menu-toggle');
-  const sidebarOverlay = document.getElementById('sidebar-overlay');
-  
-  if (menuToggle && sidebar) {
-    // Toggle sidebar on menu button click
-    menuToggle.addEventListener('click', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      sidebar.classList.toggle('open');
-      if (sidebarOverlay) {
-        sidebarOverlay.style.display = sidebar.classList.contains('open') ? 'block' : 'none';
-      }
-    });
-    
-    // Close sidebar when clicking overlay
-    if (sidebarOverlay) {
-      sidebarOverlay.addEventListener('click', () => {
-        sidebar.classList.remove('open');
-        sidebarOverlay.style.display = 'none';
-      });
-    }
-    
-    // Close sidebar on navigation (after menu click)
-    const navItems = document.querySelectorAll('.nav-item');
-    navItems.forEach(item => {
-      item.addEventListener('click', () => {
-        if (window.innerWidth <= 768) {
-          setTimeout(() => {
-            sidebar.classList.remove('open');
-            if (sidebarOverlay) sidebarOverlay.style.display = 'none';
-          }, 150);
-        }
-      });
-    });
-    
-    // Close sidebar when clicking outside on mobile
-    document.addEventListener('click', (e) => {
-      if (window.innerWidth <= 768 && sidebar.classList.contains('open')) {
-        if (!sidebar.contains(e.target) && !menuToggle.contains(e.target)) {
-          sidebar.classList.remove('open');
-          if (sidebarOverlay) sidebarOverlay.style.display = 'none';
-        }
-      }
-    });
-    
-    // Prevent body scroll when sidebar is open
-    const observer = new MutationObserver((mutations) => {
-      mutations.forEach((mutation) => {
-        if (mutation.attributeName === 'class') {
-          if (sidebar.classList.contains('open')) {
-            document.body.style.overflow = 'hidden';
-          } else {
-            document.body.style.overflow = '';
-          }
-        }
-      });
-    });
-    
-    observer.observe(sidebar, { attributes: true });
-  }
-  
-  // Add pull-to-refresh on dashboard
-  let touchStart = 0;
-  let touchStartY = 0;
-  const contentArea = document.querySelector('.content-area');
-  
-  if (contentArea) {
-    contentArea.addEventListener('touchstart', (e) => {
-      touchStart = e.touches[0].clientY;
-      touchStartY = contentArea.scrollTop;
-    });
-    
-    contentArea.addEventListener('touchmove', (e) => {
-      const touchEnd = e.touches[0].clientY;
-      const diff = touchEnd - touchStart;
-      
-      if (diff > 60 && touchStartY === 0 && currentPage === 'dashboard') {
-        e.preventDefault();
-        const refreshIndicator = document.createElement('div');
-        refreshIndicator.className = 'pull-to-refresh';
-        refreshIndicator.innerHTML = '<i class="fas fa-sync-alt fa-spin"></i> Refreshing...';
-        refreshIndicator.style.position = 'fixed';
-        refreshIndicator.style.top = '10px';
-        refreshIndicator.style.left = '50%';
-        refreshIndicator.style.transform = 'translateX(-50%)';
-        refreshIndicator.style.background = 'var(--primary)';
-        refreshIndicator.style.color = 'white';
-        refreshIndicator.style.padding = '8px 16px';
-        refreshIndicator.style.borderRadius = '20px';
-        refreshIndicator.style.zIndex = '9999';
-        refreshIndicator.style.fontSize = '12px';
-        document.body.appendChild(refreshIndicator);
-        
-        checkFTP();
-        updateQueueBadge();
-        showToast('🔄 Refreshing data...', 'info');
-        
-        setTimeout(() => {
-          refreshIndicator.remove();
-        }, 1000);
-        
-        touchStart = 0;
-      }
-    });
-  }
-  
-  // Better modal handling on mobile
-  const modals = document.querySelectorAll('.modal-overlay');
-  modals.forEach(modal => {
-    let modalTouchStart = 0;
-    const modalBox = modal.querySelector('.modal-box');
-    
-    if (modalBox && window.innerWidth <= 768) {
-      modalBox.addEventListener('touchstart', (e) => {
-        modalTouchStart = e.touches[0].clientY;
-      });
-      
-      modalBox.addEventListener('touchmove', (e) => {
-        const touchEnd = e.touches[0].clientY;
-        const diff = touchEnd - modalTouchStart;
-        
-        if (diff > 50) {
-          closeModal(modal.id);
-        }
-      });
-    }
-  });
-  
-  // Fix for iOS input zoom
-  const inputs = document.querySelectorAll('input, textarea, select');
-  inputs.forEach(input => {
-    input.addEventListener('focus', () => {
-      if (window.innerWidth <= 768) {
-        setTimeout(() => {
-          input.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        }, 300);
-      }
-    });
-  });
-  
-  // Add active state feedback for touch
-  const touchElements = document.querySelectorAll('button, .nav-item, .action-btn, .history-item');
-  touchElements.forEach(el => {
-    el.addEventListener('touchstart', () => {
-      el.classList.add('touch-active');
-    });
-    el.addEventListener('touchend', () => {
-      setTimeout(() => {
-        el.classList.remove('touch-active');
-      }, 100);
-    });
-    el.addEventListener('touchcancel', () => {
-      el.classList.remove('touch-active');
-    });
-  });
-}
-
-// Add CSS for touch feedback (tambahkan ke style.css jika belum ada)
-const touchFeedbackStyle = document.createElement('style');
-touchFeedbackStyle.textContent = `
-  .touch-active {
-    opacity: 0.7;
-    transform: scale(0.97);
-    transition: transform 0.05s, opacity 0.05s;
-  }
-  
-  .pull-to-refresh {
-    animation: slideDown 0.3s ease;
-  }
-  
-  @keyframes slideDown {
-    from {
-      transform: translate(-50%, -100%);
-      opacity: 0;
-    }
-    to {
-      transform: translate(-50%, 0);
-      opacity: 1;
-    }
-  }
-  
-  @media (max-width: 768px) {
-    .modal-box {
-      animation: slideUp 0.3s ease;
-    }
-    
-    @keyframes slideUp {
-      from {
-        transform: translateY(100%);
-      }
-      to {
-        transform: translateY(0);
-      }
-    }
-  }
-`;
-document.head.appendChild(touchFeedbackStyle);
