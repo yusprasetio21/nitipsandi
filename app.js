@@ -3,6 +3,7 @@
 // Arsitektur HYBRID:
 //   - Supabase → langsung dari browser (history, duplikasi, insert)
 //   - FTP → via bridge (cloudflared) atau Vercel serverless
+//   - REPORT → via BRIDGE_REPORT (pg-agent.js untuk query database)
 // ═══════════════════════════════════════════════════════════════════
 
 const CONFIG = {
@@ -17,19 +18,29 @@ const CONFIG = {
   // Update URL ini setiap kali cloudflared dijalankan ulang
   BRIDGE_URL:   "https://leslie-carrying-considered-roman.trycloudflare.com",
   BRIDGE_TOKEN: "DDK_GTS_BRIDGE_2025",
+
+  // ── BRIDGE BMKGSATU REPORT (khusus untuk query database report) ──────────
+  // Ganti URL ini dengan URL cloudflared dari server yang menjalankan pg-agent.js
+  BRIDGE_REPORT_URL:   "https://olympics-eight-chocolate-salmon.trycloudflare.com/",
+  BRIDGE_REPORT_TOKEN: "DDK_GTS_BRIDGE_2025",
 };
 
 // ═══════════════════════════════════════════════════════════════════
 // BRIDGE HEADERS HELPER
-// Menambahkan User-Agent agar tidak kena Cloudflare browser check
 // ═══════════════════════════════════════════════════════════════════
-function bridgeHeaders(withToken = false) {
+function bridgeHeaders(withToken = false, isReport = false) {
   const h = {
     "Content-Type": "application/json",
     "User-Agent":   "DDK-GTS-Client/1.1",
     "Accept":       "application/json",
   };
-  if (withToken) h["x-bridge-token"] = CONFIG.BRIDGE_TOKEN;
+  if (withToken) {
+    if (isReport) {
+      h["x-bridge-token"] = CONFIG.BRIDGE_REPORT_TOKEN;
+    } else {
+      h["x-bridge-token"] = CONFIG.BRIDGE_TOKEN;
+    }
+  }
   return h;
 }
 
@@ -107,7 +118,7 @@ function generateFileName() {
   const hours   = String(now.getHours()).padStart(2, '0');
   const minutes = String(now.getMinutes()).padStart(2, '0');
   const seconds = String(now.getSeconds()).padStart(2, '0');
-  return `GTS_${year}${month}${day}_${hours}${minutes}${seconds}.txt`;
+  return `GTS_${year}${month}${day}_${hours}${minutes}${seconds}.X`;
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -246,7 +257,7 @@ async function testBridgeConnection() {
 
     const res = await fetch(`${CONFIG.BRIDGE_URL}/check`, {
       method:  "GET",
-      headers: bridgeHeaders(),          // ← pakai helper (dengan User-Agent)
+      headers: bridgeHeaders(),
       signal:  AbortSignal.timeout(8000),
     });
 
@@ -299,7 +310,7 @@ async function checkFTP() {
 
         const res = await fetch(`${CONFIG.BRIDGE_URL}/check`, {
           method:  "GET",
-          headers: bridgeHeaders(),      // ← pakai helper (dengan User-Agent)
+          headers: bridgeHeaders(),
           signal:  controller.signal,
         });
 
@@ -454,7 +465,7 @@ async function processAndSend(rawText, userInput = "anonymous") {
 
         const res = await fetch(`${CONFIG.BRIDGE_URL}/upload`, {
           method:  "POST",
-          headers: bridgeHeaders(true),  // ← pakai helper (dengan token & User-Agent)
+          headers: bridgeHeaders(true),
           body:    JSON.stringify({ content: cleaned, fileName }),
           signal:  AbortSignal.timeout(15000),
         });
@@ -541,8 +552,8 @@ async function handleFTPOnline() {
 }
 
 async function retryPending() {
-  if (!isVercel) {
-    showToast("ℹ️ Retry FTP hanya bisa di Vercel. Di sini data sudah tersimpan di Supabase.", "info");
+  if (!CONFIG.BRIDGE_URL && !isVercel) {
+    showToast("ℹ️ Tidak ada bridge maupun Vercel untuk retry.", "info");
     return;
   }
 
@@ -565,19 +576,46 @@ async function retryPending() {
       const controller = new AbortController();
       const timeoutId  = setTimeout(() => controller.abort(), 30000);
 
-      const res = await fetch(`${CONFIG.API}?action=retry`, {
-        method:  "POST",
-        headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({ historyId: item.id, content: item.content, fileName: item.filename }),
-        signal:  controller.signal,
-      });
+      let res;
+
+      // ── Prioritas: Bridge dulu, baru Vercel serverless ──
+      if (CONFIG.BRIDGE_URL) {
+        console.log(`[retryPending] Using BRIDGE: ${CONFIG.BRIDGE_URL}/upload`);
+        res = await fetch(`${CONFIG.BRIDGE_URL}/upload`, {
+          method:  "POST",
+          headers: bridgeHeaders(true),
+          body:    JSON.stringify({ content: item.content, fileName: item.filename }),
+          signal:  controller.signal,
+        });
+      } else {
+        console.log(`[retryPending] Using VERCEL: ${CONFIG.API}?action=retry`);
+        res = await fetch(`${CONFIG.API}?action=retry`, {
+          method:  "POST",
+          headers: { "Content-Type": "application/json" },
+          body:    JSON.stringify({ historyId: item.id, content: item.content, fileName: item.filename }),
+          signal:  controller.signal,
+        });
+      }
 
       clearTimeout(timeoutId);
 
       if (res.ok) {
         const d = await res.json();
-        if (d.ok) {
+        if (d.ok || d.ftp1 || d.ftp2) {
           console.log(`[retryPending] ✅ Item ${item.id} sent successfully`);
+          
+          // Update status di Supabase
+          const ftpTarget = d.target || (
+            d.ftp1 && d.ftp2 ? "both" :
+            d.ftp1 ? "main" :
+            d.ftp2 ? "inaswitching" : "FTP Server"
+          );
+          await sb.update("upload_history", item.id, {
+            status:     "success",
+            note:       `Retry sukses via ${CONFIG.BRIDGE_URL ? 'bridge' : 'vercel'} (${ftpTarget})`,
+            ftp_target: ftpTarget,
+          });
+          
           success++;
         } else {
           console.warn(`[retryPending] ❌ Item ${item.id} FTP failed:`, d);
@@ -602,8 +640,8 @@ async function retryPending() {
 }
 
 async function retrySingleItem(item) {
-  if (!isVercel) {
-    showToast("❌ Fitur retry hanya tersedia di Vercel.", "error");
+  if (!CONFIG.BRIDGE_URL && !isVercel) {
+    showToast("❌ Tidak ada bridge maupun Vercel untuk retry.", "error");
     return false;
   }
 
@@ -619,12 +657,26 @@ async function retrySingleItem(item) {
     const controller = new AbortController();
     const timeoutId  = setTimeout(() => controller.abort(), 30000);
 
-    const res = await fetch(`${CONFIG.API}?action=retry`, {
-      method:  "POST",
-      headers: { "Content-Type": "application/json" },
-      body:    JSON.stringify({ historyId: item.id, content: item.content, fileName: item.filename }),
-      signal:  controller.signal,
-    });
+    let res;
+
+    // ── Prioritas: Bridge dulu, baru Vercel serverless ──
+    if (CONFIG.BRIDGE_URL) {
+      console.log(`[Retry] Using BRIDGE: ${CONFIG.BRIDGE_URL}/upload`);
+      res = await fetch(`${CONFIG.BRIDGE_URL}/upload`, {
+        method:  "POST",
+        headers: bridgeHeaders(true),
+        body:    JSON.stringify({ content: item.content, fileName: item.filename }),
+        signal:  controller.signal,
+      });
+    } else {
+      console.log(`[Retry] Using VERCEL: ${CONFIG.API}?action=retry`);
+      res = await fetch(`${CONFIG.API}?action=retry`, {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ historyId: item.id, content: item.content, fileName: item.filename }),
+        signal:  controller.signal,
+      });
+    }
 
     clearTimeout(timeoutId);
 
@@ -637,11 +689,24 @@ async function retrySingleItem(item) {
     const d = await res.json();
     console.log(`[Retry] Response:`, d);
 
-    if (d.ok) {
-      showToast("✅ Berhasil dikirim ulang ke FTP!", "success");
+    if (d.ok || d.ftp1 || d.ftp2) {
+      const ftpTarget = d.target || (
+        d.ftp1 && d.ftp2 ? "both" :
+        d.ftp1 ? "main" :
+        d.ftp2 ? "inaswitching" : "FTP Server"
+      );
+      showToast(`✅ Berhasil dikirim ulang ke FTP (${ftpTarget})!`, "success");
       item.status     = "success";
-      item.note       = `Retry sukses (${d.ftp1 && d.ftp2 ? "both" : d.ftp1 ? "main" : "inaswitching"})`;
-      item.ftp_target = d.ftp1 && d.ftp2 ? "both" : d.ftp1 ? "main" : "inaswitching";
+      item.note       = `Retry sukses via ${CONFIG.BRIDGE_URL ? 'bridge' : 'vercel'} (${ftpTarget})`;
+      item.ftp_target = ftpTarget;
+      
+      // Update Supabase
+      await sb.update("upload_history", item.id, {
+        status:     "success",
+        note:       item.note,
+        ftp_target: ftpTarget,
+      });
+      
       loadHistory();
       updateQueueBadge();
       return true;
@@ -798,8 +863,8 @@ function showHistoryDetail(item) {
 
   if (retryBtn) {
     retryBtn.style.display = item.status === "pending" ? "inline-flex" : "none";
-    retryBtn.disabled      = !isVercel;
-    retryBtn.title         = isVercel ? "Kirim ulang ke FTP" : "Fitur hanya tersedia di Vercel";
+    retryBtn.disabled      = false; // Always enabled now because we use Bridge as priority
+    retryBtn.title         = "Kirim ulang ke FTP";
     retryBtn.onclick       = async () => {
       retryBtn.disabled = true;
       retryBtn.innerHTML = `<i class="fas fa-spinner fa-spin"></i> Mengirim...`;
@@ -807,7 +872,7 @@ function showHistoryDetail(item) {
       if (success) {
         closeModal("log-modal");
       } else {
-        retryBtn.disabled  = !isVercel;
+        retryBtn.disabled  = false;
         retryBtn.innerHTML = `<i class="fas fa-redo"></i> Kirim Ulang`;
       }
     };
@@ -912,6 +977,8 @@ function switchTab(tab) {
   if (subtitle) subtitle.textContent = tab.charAt(0).toUpperCase() + tab.slice(1);
   if (tab === "history")   loadHistory();
   if (tab === "dashboard") { checkFTP(); updateQueueBadge(); }
+  if (tab === "report")    { loadReportData(); }
+  if (tab === "session")   { refreshSessionData(); }
 }
 
 function openModal(id) {
@@ -975,7 +1042,10 @@ function showToast(msg, type = "info") {
 }
 
 function escHtml(s) {
-  return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+  if (!s) return '';
+  const div = document.createElement('div');
+  div.textContent = s;
+  return div.innerHTML;
 }
 
 function formatDate(iso) {
@@ -1174,6 +1244,618 @@ touchFeedbackStyle.textContent = `
   }
 `;
 document.head.appendChild(touchFeedbackStyle);
+
+// ═══════════════════════════════════════════════════════════════════
+// CHECK REPORT DATABASE (via BRIDGE REPORT - server terpisah)
+// ═══════════════════════════════════════════════════════════════════
+
+// Store current report data globally
+let currentReportData = { rows: [], latency: 0 };
+
+async function loadReportData() {
+  const listEl = document.getElementById("report-list");
+  const countEl = document.getElementById("report-count");
+  const latencyEl = document.getElementById("report-latency");
+  const deleteAllBtn = document.getElementById("delete-all-reports-btn");
+  
+  if (!listEl) return;
+  
+  // Show loading state
+  listEl.innerHTML = `<div class="empty-state"><div class="spinner"></div><p>Memuat data dari database report...</p></div>`;
+  
+  // Check if report bridge is available
+  if (!CONFIG.BRIDGE_REPORT_URL) {
+    listEl.innerHTML = `<div class="empty-state"><div class="icon">⚠️</div><p>Bridge Report URL tidak dikonfigurasi.<br/>Pastikan pg-agent.js running di server report dan cloudflared tunnel aktif.</p></div>`;
+    return;
+  }
+  
+  try {
+    console.log(`[Report] Fetching from REPORT BRIDGE: ${CONFIG.BRIDGE_REPORT_URL}/query`);
+    
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 15000);
+    
+    const response = await fetch(`${CONFIG.BRIDGE_REPORT_URL}/query`, {
+      method: "GET",
+      headers: bridgeHeaders(true, true),
+      signal: controller.signal
+    });
+    
+    clearTimeout(timeoutId);
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`HTTP ${response.status}: ${errorText.substring(0, 100)}`);
+    }
+    
+    const data = await response.json();
+    console.log("[Report] Response from report bridge:", data);
+    
+    if (!data.ok) {
+      throw new Error(data.error || "Unknown error from report bridge");
+    }
+    
+    // Store data globally
+    currentReportData = {
+      rows: data.rows || [],
+      latency: data.latency || 0
+    };
+    
+    // Update stats
+    const rowCount = data.rows?.length || 0;
+    if (countEl) countEl.textContent = rowCount;
+    if (latencyEl) latencyEl.textContent = data.latency || "-";
+    
+    // Show/hide delete all button
+    if (deleteAllBtn) {
+      deleteAllBtn.style.display = rowCount > 0 ? "inline-flex" : "none";
+    }
+    
+    // Render report list as TABLE
+    renderReportTable(data.rows || []);
+    
+    // Update badge
+    const badge = document.getElementById("badge-report");
+    if (badge) {
+      badge.textContent = rowCount;
+      badge.style.display = rowCount > 0 ? "inline-block" : "none";
+    }
+    
+    if (rowCount === 0) {
+      listEl.innerHTML = `<div class="empty-state"><div class="icon">📭</div><p>Tidak ada data dengan at_flag = 1</p></div>`;
+    }
+    
+  } catch (err) {
+    console.error("[Report] Error:", err);
+    
+    let errorMsg = err.message;
+    if (err.name === "AbortError") {
+      errorMsg = "Timeout: Bridge Report tidak merespons dalam 15 detik";
+    } else if (err.message === "Failed to fetch") {
+      errorMsg = "Tidak dapat terhubung ke Bridge Report. Pastikan pg-agent.js running dan tunnel aktif.";
+    }
+    
+    listEl.innerHTML = `
+      <div class="empty-state">
+        <div class="icon">❌</div>
+        <p>Gagal memuat data dari Report Bridge</p>
+        <p style="font-size: 12px; color: var(--text-secondary); margin-top: 8px;">${errorMsg}</p>
+        <button class="btn btn-primary" style="margin-top: 16px;" onclick="loadReportData()">
+          <i class="fas fa-redo"></i> Coba Lagi
+        </button>
+      </div>
+    `;
+  }
+}
+
+function getAgeClass(createdAt) {
+  if (!createdAt) return '';
+  
+  const created = new Date(createdAt);
+  const now = new Date();
+  const diffTime = Math.abs(now - created);
+  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  const diffMonths = diffDays / 30;
+  
+  if (diffDays >= 365) {
+    return 'age-1year';
+  } else if (diffMonths >= 1) {
+    return 'age-1month';
+  }
+  return '';
+}
+
+function renderReportTable(rows) {
+  const listEl = document.getElementById("report-list");
+  if (!listEl) return;
+  
+  if (!rows || rows.length === 0) {
+    listEl.innerHTML = `<div class="empty-state"><div class="icon">📭</div><p>Tidak ada data dengan at_flag = 1</p></div>`;
+    return;
+  }
+  
+  const tableHtml = `
+    <div class="legend-box">
+      <span class="legend-color age-1year"></span> ≥ 1 tahun (merah)
+      <span class="legend-color age-1month" style="margin-left:16px;"></span> ≥ 1 bulan (oranye)
+      <span class="legend-color" style="background:transparent;border:1px solid var(--border);"></span> < 1 bulan (normal)
+    </div>
+    <div class="table-responsive">
+      <table class="report-table">
+        <thead>
+          <tr>
+            <th width="50">ID</th>
+            <th width="70">Action</th>
+            <th width="180">Created At</th>
+            <th width="180">Updated At</th>
+            <th width="80">Status</th>
+            <th>Content Preview</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows.map(row => {
+            const createdAt = row.at_create ? new Date(row.at_create).toLocaleString("id-ID") : "-";
+            const updatedAt = row.at_update ? new Date(row.at_update).toLocaleString("id-ID") : "-";
+            const content = row.req_content || "-";
+            const contentPreview = content.length > 100 ? content.substring(0, 100) + "..." : content;
+            const ageClass = getAgeClass(row.at_create);
+            const escapedContent = escHtml(content).replace(/"/g, '&quot;');
+            
+            return `
+              <tr class="${ageClass}" data-id="${row.id}">
+                <td><code>${row.id}</code></td>
+                <td>
+                  <button class="btn btn-danger btn-icon-sm" onclick="deleteReportItem(${row.id})" title="Hapus data">
+                    <i class="fas fa-times"></i>
+                  </button>
+                 </td>
+                <td><small>${createdAt}</small></td>
+                <td><small>${updatedAt}</small></td>
+                <td>
+                  <span class="status-badge status-${row.req_status === 1 ? 'success' : 'pending'}">
+                    ${row.req_status || 0}
+                  </span>
+                 </td>
+                <td>
+                  <div class="content-preview" title="${escapedContent}">
+                    ${escHtml(contentPreview)}
+                  </div>
+                  <button class="btn-link" onclick="viewFullContent(${row.id})">Lihat lengkap</button>
+                 </td>
+               </tr>
+            `;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+  
+  listEl.innerHTML = tableHtml;
+}
+
+async function deleteReportItem(id, event) {
+  if (event && event.stopPropagation) event.stopPropagation();
+  
+  if (!confirm(`Hapus data dengan ID ${id}?\n\nData akan dihapus permanen dari database.`)) return;
+  
+  if (!CONFIG.BRIDGE_REPORT_URL) {
+    showToast("Bridge Report URL tidak dikonfigurasi", "error");
+    return;
+  }
+  
+  try {
+    showToast(`Menghapus ID ${id}...`, "info");
+    
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
+    
+    const response = await fetch(`${CONFIG.BRIDGE_REPORT_URL}/delete`, {
+      method: "POST",
+      headers: bridgeHeaders(true, true),
+      body: JSON.stringify({ id: String(id) }),
+      signal: controller.signal
+    });
+    
+    clearTimeout(timeoutId);
+    
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+    
+    const data = await response.json();
+    
+    if (data.ok) {
+      showToast(`✅ Berhasil menghapus ID ${id}`, "success");
+      await loadReportData();
+    } else {
+      throw new Error(data.error || "Delete failed");
+    }
+    
+  } catch (err) {
+    console.error("[Delete] Error:", err);
+    showToast(`❌ Gagal menghapus: ${err.message}`, "error");
+  }
+}
+
+async function deleteAllReportItems() {
+  const confirmMsg = `⚠️ PERINGATAN BERAT ⚠️\n\nAnda akan menghapus SEMUA data dengan at_flag = 1 dari database report.\n\nTindakan ini TIDAK DAPAT DIURKAN.\n\nYakin ingin melanjutkan?`;
+  
+  if (!confirm(confirmMsg)) return;
+  
+  if (!CONFIG.BRIDGE_REPORT_URL) {
+    showToast("Bridge Report URL tidak dikonfigurasi", "error");
+    return;
+  }
+  
+  try {
+    showToast("Menghapus semua data...", "info");
+    
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000);
+    
+    const response = await fetch(`${CONFIG.BRIDGE_REPORT_URL}/delete-all`, {
+      method: "POST",
+      headers: bridgeHeaders(true, true),
+      signal: controller.signal
+    });
+    
+    clearTimeout(timeoutId);
+    
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+    
+    const data = await response.json();
+    
+    if (data.ok) {
+      showToast(`✅ Berhasil menghapus ${data.deleted} data`, "success");
+      await loadReportData();
+    } else {
+      throw new Error(data.error || "Delete all failed");
+    }
+    
+  } catch (err) {
+    console.error("[DeleteAll] Error:", err);
+    showToast(`❌ Gagal menghapus semua: ${err.message}`, "error");
+  }
+}
+
+function viewFullContent(id) {
+  if (currentReportData && currentReportData.rows) {
+    const item = currentReportData.rows.find(r => r.id == id);
+    if (item && item.req_content) {
+      showModalContent(item.req_content, item.id);
+      return;
+    }
+  }
+  
+  const row = document.querySelector(`.report-table tr[data-id="${id}"]`);
+  if (row) {
+    const previewDiv = row.querySelector('.content-preview');
+    if (previewDiv && previewDiv.getAttribute('title')) {
+      const fullContent = previewDiv.getAttribute('title');
+      showModalContent(fullContent, id);
+      return;
+    }
+  }
+  
+  showToast("Tidak dapat menemukan konten", "error");
+}
+
+function showModalContent(content, id) {
+  const modal = document.createElement('div');
+  modal.className = 'modal-overlay';
+  modal.style.display = 'flex';
+  modal.innerHTML = `
+    <div class="modal-box" style="max-width: 800px; width: 90%;">
+      <div class="modal-header">
+        <h3><i class="fas fa-file-alt"></i> Full Content - ID: ${id}</h3>
+        <button class="modal-close" onclick="this.closest('.modal-overlay').remove()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <pre style="white-space: pre-wrap; font-family: monospace; font-size: 12px; max-height: 500px; overflow: auto;">${escHtml(content)}</pre>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="copyTextFromModal('${escHtml(content).replace(/'/g, "\\'")}')">
+          <i class="fas fa-copy"></i> Copy
+        </button>
+        <button class="btn btn-primary" onclick="this.closest('.modal-overlay').remove()">Tutup</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+}
+
+function copyTextFromModal(text) {
+  const textarea = document.createElement('textarea');
+  textarea.innerHTML = text;
+  const decodedText = textarea.value;
+  
+  navigator.clipboard.writeText(decodedText).then(() => {
+    showToast("✅ Content disalin ke clipboard", "success");
+  }).catch(() => {
+    showToast("❌ Gagal menyalin", "error");
+  });
+}
+
+function refreshReportData() {
+  loadReportData();
+}
+
+/* ════════════════════════════════════════════════════════════
+   CHECK SESSION — gBmkgSatu
+   ════════════════════════════════════════════════════════════ */
+
+const SESSION_TOKEN = 'DDK_GTS_BRIDGE_2025';
+const SESSION_ENDPOINT = '/cek-session';
+
+let sessionAutoRefreshTimer = null;
+
+/**
+ * Refresh data session dari bridge
+ */
+async function refreshSessionData() {
+  const btn = document.getElementById('btn-refresh-session');
+  const countEl = document.getElementById('session-count');
+  const latencyEl = document.getElementById('session-latency');
+  const tsEl = document.getElementById('session-ts');
+  const tsWrap = document.getElementById('session-timestamp');
+  const listEl = document.getElementById('session-list');
+  const summaryEl = document.getElementById('session-summary');
+  const dbEl = document.getElementById('session-db-name');
+
+  // Loading state
+  if (btn) {
+    btn.classList.add('loading');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-sync-alt fa-spin"></i> Loading...';
+  }
+
+  try {
+    // ── PERBAIKAN: Gunakan BRIDGE_REPORT_URL (bridge ke-2) ──
+    // Endpoint /cek-session ada di server database bmkgsatu_report (olympics-eight-chocolate-salmon)
+    let bridgeBase = (typeof CONFIG !== 'undefined' && CONFIG.BRIDGE_REPORT_URL)
+      ? CONFIG.BRIDGE_REPORT_URL.replace(/\/+$/, '') // Hilangkan trailing slash jika ada
+      : window.location.origin;
+      
+    const url = bridgeBase + SESSION_ENDPOINT;
+
+    const t0 = performance.now();
+    const resp = await fetch(url, {
+      headers: { 'x-bridge-token': SESSION_TOKEN }
+    });
+    const t1 = performance.now();
+
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+
+    const data = await resp.json();
+    const clientLatency = Math.round(t1 - t0);
+
+    if (!data.ok) throw new Error(data.error || 'Response not ok');
+
+    // Update stats
+    const sessions = data.sessions || [];
+    if (countEl) countEl.textContent = sessions.length;
+    if (latencyEl) latencyEl.textContent = data.latency || clientLatency;
+
+    if (data.ts && tsWrap && tsEl) {
+      tsWrap.style.display = '';
+      tsEl.textContent = formatTimestamp(data.ts);
+    }
+
+    if (data.database && dbEl) {
+      dbEl.textContent = data.database;
+    }
+
+    // Update badge
+    updateSessionBadge(sessions.length);
+
+    // Render
+    if (sessions.length === 0) {
+      if (summaryEl) summaryEl.style.display = 'none';
+      if (listEl) listEl.innerHTML = `
+        <div class="session-all-clear">
+          <div class="clear-icon">✅</div>
+          <h3>Tidak Ada Active Session</h3>
+          <p>Database ${escHtml(data.database || '-')} bersih, tidak ada query yang berjalan.</p>
+        </div>`;
+    } else {
+      renderSessionSummary(sessions);
+      renderSessionTable(sessions);
+    }
+
+  } catch (err) {
+    console.error('[Session] Error:', err);
+    if (countEl) countEl.textContent = '-';
+    if (latencyEl) latencyEl.textContent = '-';
+    if (listEl) listEl.innerHTML = `
+      <div class="empty-state">
+        <div class="icon" style="color:var(--danger,#f43f5e)">⚠️</div>
+        <p>Gagal memuat data session</p>
+        <p class="session-empty-sub">${escHtml(err.message)}</p>
+      </div>`;
+    if (summaryEl) summaryEl.style.display = 'none';
+  } finally {
+    if (btn) {
+      btn.classList.remove('loading');
+      btn.disabled = false;
+      btn.innerHTML = '<i class="fas fa-sync-alt"></i> Refresh';
+    }
+  }
+}
+
+function renderSessionSummary(sessions) {
+  const summaryEl = document.getElementById('session-summary');
+  if (summaryEl) summaryEl.style.display = '';
+
+  let slow = 0, medium = 0, fast = 0;
+  const userSet = new Set();
+
+  sessions.forEach(s => {
+    userSet.add(s.usename);
+    const totalSec = durationToSeconds(s.duration);
+    if (totalSec >= 1800) slow++;
+    else if (totalSec >= 300) medium++;
+    else fast++;
+  });
+
+  const sumSlow = document.getElementById('sum-slow');
+  const sumMedium = document.getElementById('sum-medium');
+  const sumFast = document.getElementById('sum-fast');
+  const sumUsers = document.getElementById('sum-users');
+
+  if (sumSlow) sumSlow.textContent = slow;
+  if (sumMedium) sumMedium.textContent = medium;
+  if (sumFast) sumFast.textContent = fast;
+  if (sumUsers) sumUsers.textContent = userSet.size;
+
+  if (sumSlow) sumSlow.style.color = slow > 0 ? '#f43f5e' : '';
+}
+
+function renderSessionTable(sessions) {
+  const listEl = document.getElementById('session-list');
+  if (!listEl) return;
+
+  const sorted = [...sessions].sort((a, b) => {
+    return durationToSeconds(b.duration) - durationToSeconds(a.duration);
+  });
+
+  let html = `<div class="session-table-wrap"><table class="session-table">
+    <thead>
+      <tr>
+        <th>PID</th>
+        <th>User</th>
+        <th>Database</th>
+        <th>Query</th>
+        <th>Started</th>
+        <th>Duration</th>
+      </tr>
+    </thead>
+    <tbody>`;
+
+  sorted.forEach((s, i) => {
+    const totalSec = durationToSeconds(s.duration);
+    const durClass = totalSec >= 1800 ? 'dur-slow' : totalSec >= 300 ? 'dur-medium' : 'dur-fast';
+    const durText = formatDuration(s.duration);
+    const queryId = 'q-' + i;
+    const truncLen = 120;
+    const queryText = s.query || '';
+    const isTruncated = queryText.length > truncLen;
+
+    const startParts = parseQueryStart(s.query_start);
+
+    html += `<tr>
+      <td class="cell-pid">${s.pid}</td>
+      <td class="cell-user">${escHtml(s.usename)}</td>
+      <td><span class="cell-db">${escHtml(s.datname)}</span></td>
+      <td class="cell-query">
+        <span class="q-truncated" onclick="toggleQueryExpand('${queryId}')">${escHtml(queryText.substring(0, truncLen))}${isTruncated ? '<span class="q-ellipsis"> ...klik untuk expand</span>' : ''}</span>
+        ${isTruncated ? `<div class="query-full" id="${queryId}">${escHtml(queryText)}</div>` : ''}
+      </td>
+      <td class="cell-start">
+        <span class="s-date">${startParts.date}</span>
+        <span class="s-time">${startParts.time}</span>
+      </td>
+      <td><span class="dur-badge ${durClass}"><i class="fas fa-clock"></i> ${durText}</span></td>
+    </tr>`;
+  });
+
+  html += '</tbody></table></div>';
+  listEl.innerHTML = html;
+}
+
+function toggleQueryExpand(id) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.classList.toggle('show');
+}
+
+function updateSessionBadge(count) {
+  const badge = document.getElementById('badge-session');
+  if (!badge) return;
+  if (count > 0) {
+    badge.style.display = '';
+    badge.textContent = count;
+  } else {
+    badge.style.display = 'none';
+  }
+}
+
+function toggleSessionAutoRefresh() {
+  const cb = document.getElementById('session-auto-refresh');
+  if (cb && cb.checked) {
+    sessionAutoRefreshTimer = setInterval(() => {
+      const section = document.getElementById('section-session');
+      if (section && section.classList.contains('active')) {
+        refreshSessionData();
+      }
+    }, 10000);
+  } else {
+    if (sessionAutoRefreshTimer) {
+      clearInterval(sessionAutoRefreshTimer);
+      sessionAutoRefreshTimer = null;
+    }
+  }
+}
+
+/* ── Session Helper Functions ── */
+
+function durationToSeconds(dur) {
+  if (!dur) return 0;
+  return (dur.minutes || 0) * 60 + (dur.seconds || 0) + (dur.milliseconds || 0) / 1000;
+}
+
+function formatDuration(dur) {
+  if (!dur) return '-';
+  const m = dur.minutes || 0;
+  const s = dur.seconds || 0;
+  const ms = Math.round(dur.milliseconds || 0);
+
+  if (m > 0) {
+    return m + 'm ' + String(s).padStart(2, '0') + 's';
+  }
+  if (s > 0) {
+    return s + '.' + String(ms).padStart(3, '0') + 's';
+  }
+  return ms + 'ms';
+}
+
+function parseQueryStart(isoStr) {
+  if (!isoStr) return { date: '-', time: '-' };
+  try {
+    const d = new Date(isoStr);
+    const date = d.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
+    const time = d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    return { date, time };
+  } catch {
+    return { date: '-', time: isoStr };
+  }
+}
+
+function formatTimestamp(isoStr) {
+  if (!isoStr) return '-';
+  try {
+    const d = new Date(isoStr);
+    return d.toLocaleString('id-ID', {
+      day: '2-digit', month: 'short', year: 'numeric',
+      hour: '2-digit', minute: '2-digit', second: '2-digit'
+    });
+  } catch {
+    return isoStr;
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// EXPORT FUNCTIONS TO GLOBAL WINDOW SCOPE (For HTML onclick)
+// ═══════════════════════════════════════════════════════════════════
+window.refreshReportData = refreshReportData;
+window.deleteAllReportItems = deleteAllReportItems;
+window.deleteReportItem = deleteReportItem;
+window.viewFullContent = viewFullContent;
+
+window.refreshSessionData = refreshSessionData;
+window.toggleSessionAutoRefresh = toggleSessionAutoRefresh;
+window.toggleQueryExpand = toggleQueryExpand;
 
 // ═══════════════════════════════════════════════════════════════════
 // INIT
