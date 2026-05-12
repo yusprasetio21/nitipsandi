@@ -24,6 +24,7 @@
       --success: #10b981;
       --warning: #f59e0b;
       --danger: #ef4444;
+      --info: #8b5cf6;
       --sidebar-bg: #0f172a;
       --sidebar-text: #e2e8f0;
     }
@@ -267,7 +268,7 @@
       margin-bottom: 8px;
     }
 
-    /* Bridge Monitor Styles */
+    /* Bridge URL Config */
     .bridge-url-config {
       background: var(--surface);
       border: 1px solid var(--border);
@@ -276,16 +277,27 @@
       margin-bottom: 20px;
     }
 
-    /* Sembunyikan bagian Bridge URL */
     .hidden-bridge-config {
       display: none;
     }
 
-    /* Tampilkan hanya tombol dalam satu baris */
     .compact-actions {
       display: flex;
       gap: 12px;
       justify-content: flex-end;
+    }
+
+    .search-box {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 20px;
+      flex-wrap: wrap;
+      align-items: flex-end;
+    }
+
+    .search-box .form-group {
+      flex: 1;
+      margin-bottom: 0;
     }
 
     .form-group {
@@ -298,7 +310,7 @@
       font-weight: 500;
     }
 
-    .form-input {
+    .form-input, .form-select {
       width: 100%;
       padding: 10px;
       background: var(--bg-primary);
@@ -346,6 +358,11 @@
       color: white;
     }
 
+    .btn-info {
+      background: var(--info);
+      color: white;
+    }
+
     .btn-sm {
       padding: 6px 12px;
       font-size: 12px;
@@ -370,6 +387,8 @@
       padding: 12px;
       text-align: left;
       border-bottom: 1px solid var(--border);
+      position: sticky;
+      top: 0;
     }
 
     td {
@@ -404,89 +423,6 @@
       margin-bottom: 16px;
     }
 
-    /* Modal Styles */
-    .modal-overlay {
-      position: fixed;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      background: rgba(0,0,0,0.7);
-      backdrop-filter: blur(5px);
-      z-index: 1000;
-      display: none;
-      justify-content: center;
-      align-items: center;
-    }
-
-    .modal-box {
-      background: var(--bg-secondary);
-      border-radius: 12px;
-      width: 90%;
-      max-width: 500px;
-      max-height: 80vh;
-      overflow: auto;
-      border: 1px solid var(--border);
-    }
-
-    .modal-header {
-      padding: 20px;
-      border-bottom: 1px solid var(--border);
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-
-    .modal-header h3 {
-      margin: 0;
-    }
-
-    .modal-close {
-      background: none;
-      border: none;
-      font-size: 24px;
-      cursor: pointer;
-      color: var(--text-secondary);
-    }
-
-    .modal-body {
-      padding: 20px;
-    }
-
-    .modal-footer {
-      padding: 20px;
-      border-top: 1px solid var(--border);
-      display: flex;
-      justify-content: flex-end;
-      gap: 12px;
-    }
-
-    .record-detail {
-      background: var(--surface-dim);
-      padding: 12px;
-      border-radius: 8px;
-      margin: 16px 0;
-    }
-
-    .record-detail .label {
-      font-size: 11px;
-      color: var(--text-secondary);
-      text-transform: uppercase;
-    }
-
-    .record-detail .value {
-      margin-top: 4px;
-      font-weight: 500;
-    }
-
-    .warning-text {
-      background: rgba(239, 68, 68, 0.1);
-      padding: 12px;
-      border-radius: 8px;
-      border-left: 3px solid var(--danger);
-      font-size: 13px;
-    }
-
     .stats-info {
       display: flex;
       gap: 20px;
@@ -498,14 +434,16 @@
       align-items: center;
     }
 
-    .row-danger { background-color: rgba(239, 68, 68, 0.1) !important; }
-    .row-warning { background-color: rgba(245, 158, 11, 0.1) !important; }
-
     pre {
       background: var(--surface-dim);
       padding: 12px;
       border-radius: 8px;
       overflow-x: auto;
+      font-size: 12px;
+    }
+
+    .weather-data {
+      font-family: monospace;
       font-size: 12px;
     }
 
@@ -520,9 +458,59 @@
       .menu-toggle {
         display: block;
       }
-      .action-buttons {
-        flex-wrap: wrap;
+      .search-box {
+        flex-direction: column;
       }
+      .search-box .form-group {
+        width: 100%;
+      }
+      /* Untuk horizontal scroll yang smooth */
+.table-wrapper {
+  overflow-x: auto;
+  overflow-y: visible;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  border-radius: 8px;
+}
+
+.table-wrapper::-webkit-scrollbar {
+  height: 8px;
+  background: var(--surface-dim);
+  border-radius: 4px;
+}
+
+.table-wrapper::-webkit-scrollbar-thumb {
+  background: var(--primary);
+  border-radius: 4px;
+}
+
+.table-wrapper::-webkit-scrollbar-track {
+  background: var(--border);
+  border-radius: 4px;
+}
+
+/* Tabel tidak perlu overflow sendiri */
+#awsdigi-table table {
+  min-width: 1400px;
+  width: max-content;
+}
+
+/* Alternatif: biar proporsional */
+.aws-table-responsive {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.aws-table-responsive table {
+  width: max-content;
+  min-width: 100%;
+}
+
+/* Fix kolom tetap rapi */
+#awsdigi-table th,
+#awsdigi-table td {
+  white-space: nowrap;
+}
     }
   </style>
 </head>
@@ -533,7 +521,7 @@
 </div>
 
 <div class="app-layout">
-  <!-- SIDEBAR - Sama persis dengan index.html -->
+  <!-- SIDEBAR -->
   <aside class="sidebar" id="sidebar">
     <div class="sidebar-header">
       <div class="logo">
@@ -546,39 +534,36 @@
     </div>
 
     <nav class="sidebar-nav">
-      <button class="nav-item" data-tab="dashboard" onclick="navigateToDashboard()">
+    <button class="nav-item" data-tab="dashboard" onclick="navigateToDashboard()">
         <i class="fas fa-tachometer-alt"></i><span>Dashboard</span>
-      </button>
-      <button class="nav-item" data-tab="input" onclick="navigateToDashboard()">
+    </button>
+    <button class="nav-item" data-tab="input" onclick="navigateToDashboard()">
         <i class="fas fa-edit"></i><span>Input Data</span>
-      </button>
-      <button class="nav-item" data-tab="history" onclick="navigateToDashboard()">
+    </button>
+    <button class="nav-item" data-tab="history" onclick="navigateToDashboard()">
         <i class="fas fa-history"></i><span>History</span>
-      </button>
-      <button class="nav-item active" data-tab="report" onclick="switchBridgeTab('report')">
+    </button>
+    <button class="nav-item" data-tab="report" onclick="switchBridgeTab('report')">
         <i class="fas fa-file-alt"></i><span>Check Report</span>
         <span class="badge" id="badge-report" style="display:none">0</span>
-      </button>
-      <button class="nav-item" data-tab="session" onclick="switchBridgeTab('session')">
+    </button>
+    <button class="nav-item" data-tab="session" onclick="switchBridgeTab('session')">
         <i class="fas fa-plug"></i><span>Check Session</span>
         <span class="badge" id="badge-session" style="display:none">0</span>
-      </button>
-      <button class="nav-item" data-tab="settings" onclick="navigateToDashboard()">
+    </button>
+    <button class="nav-item" data-tab="awsdigi" onclick="switchBridgeTab('awsdigi')">
+        <i class="fas fa-cloud-sun"></i><span>AWS Digi</span>
+    </button>
+    <button class="nav-item" data-tab="settings" onclick="navigateToDashboard()">
         <i class="fas fa-cog"></i><span>Settings</span>
-      </button>
+    </button>
     </nav>
 
     <div class="sidebar-footer">
       <div class="system-status">
         <div class="status-item">
-          <span class="status-label">FTP Main:</span>
-          <span class="status-value" id="sb-ftp1">
-            <i class="fas fa-circle"></i><span>Mengecek</span>
-          </span>
-        </div>
-        <div class="status-item">
-          <span class="status-label">InaSwitching:</span>
-          <span class="status-value" id="sb-ftp3">
+          <span class="status-label">Bridge Status:</span>
+          <span class="status-value" id="sb-bridge">
             <i class="fas fa-circle"></i><span>Mengecek</span>
           </span>
         </div>
@@ -608,25 +593,9 @@
     </header>
 
     <div class="content-area">
-      <!-- Bridge Config Section - HIDDEN tapi tetap ada di DOM -->
-      <div class="bridge-url-config hidden-bridge-config">
-        <div class="form-group">
-          <label class="form-label"><i class="fas fa-link"></i> Bridge URL</label>
-          <input type="text" id="bridgeUrl" class="form-input" value="https://olympics-eight-chocolate-salmon.trycloudflare.com">
-        </div>
-        <div class="action-buttons">
-          <button class="btn btn-primary" onclick="testConnection()">
-            <i class="fas fa-plug"></i> Test Connection
-          </button>
-          <button class="btn btn-secondary" onclick="refreshCurrentTab()">
-            <i class="fas fa-sync-alt"></i> Refresh
-          </button>
-        </div>
-        <div id="connection-status" style="margin-top:16px;display:none"></div>
-      </div>
-
-      <!-- Tampilan ringkas tanpa input URL - hanya tombol aksi -->
+      <!-- Bridge Config Section - COMPACT -->
       <div class="bridge-url-config">
+        <input type="hidden" id="bridgeUrl" value="https://olympics-eight-chocolate-salmon.trycloudflare.com">
         <div class="compact-actions">
           <button class="btn btn-primary" onclick="testConnection()">
             <i class="fas fa-plug"></i> Test Connection
@@ -639,7 +608,7 @@
       </div>
 
       <!-- Report Section -->
-      <div id="report-section" class="page-section active">
+      <div id="report-section" class="page-section">
         <div class="page-header">
           <h2><i class="fas fa-file-alt"></i> Report Data</h2>
           <p>Data dengan at_flag = 1 dari database</p>
@@ -674,10 +643,59 @@
           <div class="empty-state"><div class="icon">🔌</div><p>Klik Refresh untuk memuat session data</p></div>
         </div>
       </div>
+
+      <!-- AWS Digi Section -->
+      <div id="awsdigi-section" class="page-section">
+        <div class="page-header">
+          <h2><i class="fas fa-cloud-sun"></i> AWS Digi - Data Synop</h2>
+          <p>Cek data synop hari ini dari database digisatu (192.168.15.220)</p>
+        </div>
+        
+        <!-- Search Form -->
+        <div class="bridge-url-config">
+          <div class="search-box">
+            <div class="form-group" style="flex:2">
+              <label class="form-label"><i class="fas fa-search"></i> ID Station (bisa partial) *</label>
+              <input type="text" id="aws-station-id" class="form-input" placeholder="Contoh: STW1011 atau STW atau WMO12345" value="STW">
+            </div>
+            <div class="form-group" style="flex:1">
+              <label class="form-label"><i class="fas fa-list-ol"></i> Limit (max 500)</label>
+              <input type="number" id="aws-limit" class="form-input" value="10" min="1" max="500">
+            </div>
+            <div class="form-group">
+              <button class="btn btn-primary" onclick="searchAwsDigi()" style="margin-top:28px">
+                <i class="fas fa-cloud-sun"></i> Cari Data
+              </button>
+            </div>
+          </div>
+          <div class="compact-actions" style="justify-content:flex-start">
+            <button class="btn btn-secondary btn-sm" onclick="clearAwsDigi()">
+              <i class="fas fa-eraser"></i> Clear
+            </button>
+          </div>
+        </div>
+
+        <!-- Result Info -->
+        <div id="aws-result-info" class="stats-info" style="display:none">
+          <span><i class="fas fa-database"></i> Total Data: <strong id="aws-total-count">0</strong></span>
+          <span><i class="fas fa-calendar-day"></i> Tanggal (UTC): <strong id="aws-date-utc">-</strong></span>
+          <span><i class="fas fa-server"></i> Database: <strong id="aws-database">digisatu</strong></span>
+          <span><i class="fas fa-tachometer-alt"></i> Latency: <strong id="aws-latency">-</strong> ms</span>
+        </div>
+
+        <!-- Results Table -->
+        <div id="awsdigi-table" class="table-container">
+          <div class="empty-state">
+            <div class="icon">🌤️</div>
+            <p>Masukkan ID Station (contoh: STW1011 atau STW) lalu klik Cari Data</p>
+            <p style="font-size:12px;margin-top:8px">Data yang ditampilkan adalah data hari ini (UTC) dari tabel synop</p>
+          </div>
+        </div>
+      </div>
     </div>
 
     <footer style="padding: 12px 24px; border-top: 1px solid var(--border); font-size: 12px; color: var(--text-secondary);">
-      <span>DDK GTS Bridge Monitor v1.0</span>
+      <span>DDK GTS Bridge Monitor v2.0 - Dengan AWS Digi Support</span>
     </footer>
   </main>
 </div>
@@ -747,28 +765,26 @@
 
   // ==================== TEST CONNECTION ====================
   async function testConnection() {
-    // Tampilkan status di compact section
     const statusDiv = document.getElementById('connection-status-compact');
     statusDiv.style.display = 'block';
     statusDiv.innerHTML = '<span class="loading-spinner" style="width:20px;height:20px;display:inline-block"></span> Checking connection...';
     
     try {
       const data = await callApi('/check');
-      statusDiv.innerHTML = `<span style="color:var(--success)">✅ Connected! Server: ${data.message || 'OK'}</span>`;
+      statusDiv.innerHTML = `<span style="color:var(--success)">✅ Connected! Latency: ${data.latency}ms</span>`;
       setTimeout(() => { statusDiv.style.display = 'none'; }, 3000);
       
-      // Update sidebar status
-      const bridgeStatus = document.getElementById('sb-ftp1');
+      const bridgeStatus = document.getElementById('sb-bridge');
       if (bridgeStatus) {
-        bridgeStatus.innerHTML = '<i class="fas fa-circle"></i><span>Bridge Online</span>';
+        bridgeStatus.innerHTML = '<i class="fas fa-circle"></i><span>Online</span>';
         bridgeStatus.className = 'status-value online';
       }
     } catch (err) {
       statusDiv.innerHTML = `<span style="color:var(--danger)">❌ Connection failed: ${err.message}</span>`;
       
-      const bridgeStatus = document.getElementById('sb-ftp1');
+      const bridgeStatus = document.getElementById('sb-bridge');
       if (bridgeStatus) {
-        bridgeStatus.innerHTML = '<i class="fas fa-circle"></i><span>Bridge Offline</span>';
+        bridgeStatus.innerHTML = '<i class="fas fa-circle"></i><span>Offline</span>';
         bridgeStatus.className = 'status-value offline';
       }
     }
@@ -798,6 +814,124 @@
     return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
   }
 
+  // ==================== AWS DIGI FUNCTIONS ====================
+async function searchAwsDigi() {
+  const stationId = document.getElementById('aws-station-id').value.trim();
+  const limit = document.getElementById('aws-limit').value;
+  
+  if (!stationId) {
+    alert('⚠️ ID Station wajib diisi! Contoh: STW1011 atau STW');
+    return;
+  }
+  
+  const container = document.getElementById('awsdigi-table');
+  const resultInfo = document.getElementById('aws-result-info');
+  
+  container.innerHTML = '<div class="empty-state"><div class="loading-spinner" style="width:30px;height:30px"></div><p>Mengambil data dari server...</p></div>';
+  resultInfo.style.display = 'none';
+  
+  try {
+    const data = await callApi(`/cek-awsdigi?id_station=${encodeURIComponent(stationId)}&limit=${limit}`);
+    
+    // Update result info
+    document.getElementById('aws-total-count').textContent = data.count;
+    document.getElementById('aws-date-utc').textContent = data.date_utc;
+    document.getElementById('aws-database').textContent = data.database;
+    document.getElementById('aws-latency').textContent = data.latency;
+    resultInfo.style.display = 'flex';
+    
+    if (data.count === 0) {
+      container.innerHTML = `<div class="empty-state"><div class="icon">🔍</div><p>Tidak ada data untuk station "${escapeHtml(stationId)}" pada hari ini (UTC: ${data.date_utc})</p></div>`;
+      return;
+    }
+    
+    // PERUBAHAN 1: width:max-content agar tabel melebar sesuai konten
+    // PERUBAHAN 2: white-space: nowrap agar teks tidak membungkus
+    let html = `<div style="overflow-x:auto; -webkit-overflow-scrolling:touch;">\n
+      <table style="width:max-content; font-size:12px; border-collapse:collapse;">\n
+        <thead>\n
+          <tr style="background:var(--surface-dim); border-bottom:1px solid var(--border);">\n
+            <th style="padding:10px 8px; text-align:left; white-space:nowrap;">No</th>\n
+            <th style="padding:10px 8px; text-align:left; white-space:nowrap;">ID Station</th>\n
+            <th style="padding:10px 8px; text-align:left; white-space:nowrap;">TS Data (UTC)</th>\n
+            <th style="padding:10px 8px; text-align:left; white-space:nowrap;">Suhu (°C)</th>\n
+            <th style="padding:10px 8px; text-align:left; white-space:nowrap;">Wetbulb (°C)</th>\n
+            <th style="padding:10px 8px; text-align:left; white-space:nowrap;">Dew Point (°C)</th>\n
+            <th style="padding:10px 8px; text-align:left; white-space:nowrap;">Suhu Max (°C)</th>\n
+            <th style="padding:10px 8px; text-align:left; white-space:nowrap;">Suhu Min (°C)</th>\n
+            <th style="padding:10px 8px; text-align:left; white-space:nowrap;">QFF (mb)</th>\n
+            <th style="padding:10px 8px; text-align:left; white-space:nowrap;">QFE (mb)</th>\n
+            <th style="padding:10px 8px; text-align:left; white-space:nowrap;">P_diff_3h</th>\n
+            <th style="padding:10px 8px; text-align:left; white-space:nowrap;">P_diff_24h</th>\n
+            <th style="padding:10px 8px; text-align:left; white-space:nowrap;">RH (%)</th>\n
+            <th style="padding:10px 8px; text-align:left; white-space:nowrap;">Arah Angin (°)</th>\n
+            <th style="padding:10px 8px; text-align:left; white-space:nowrap;">Kec. Angin (knot)</th>\n
+            <th style="padding:10px 8px; text-align:left; white-space:nowrap;">Rain Indicator</th>\n
+            <th style="padding:10px 8px; text-align:left; white-space:nowrap;">CH 3h (mm)</th>\n
+            <th style="padding:10px 8px; text-align:left; white-space:nowrap;">CH 6h (mm)</th>\n
+            <th style="padding:10px 8px; text-align:left; white-space:nowrap;">CH 24h (mm)</th>\n
+           </tr>\n
+        </thead>\n
+        <tbody>`;
+    
+    data.rows.forEach((row, idx) => {
+      // Format timestamp
+      let tsDisplay = '-';
+      if (row.ts_data_utc) {
+        try {
+          const d = new Date(row.ts_data_utc);
+          tsDisplay = `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,'0')}-${String(d.getUTCDate()).padStart(2,'0')} ${String(d.getUTCHours()).padStart(2,'0')}:${String(d.getUTCMinutes()).padStart(2,'0')}:${String(d.getUTCSeconds()).padStart(2,'0')}`;
+        } catch(e) { tsDisplay = row.ts_data_utc; }
+      }
+      
+      html += `<tr style="border-bottom:1px solid var(--border);">\n
+        <td style="padding:8px; white-space:nowrap;">${idx + 1}</td>\n
+        <td style="padding:8px; white-space:nowrap;"><strong>${escapeHtml(row.id_station)}</strong></td>\n
+        <td style="padding:8px; white-space:nowrap;">${tsDisplay}</td>\n
+        <td style="padding:8px; white-space:nowrap;">${row.temperature_c !== null ? row.temperature_c : '-'}</td>\n
+        <td style="padding:8px; white-space:nowrap;">${row.wetbulb_c !== null ? row.wetbulb_c : '-'}</td>\n
+        <td style="padding:8px; white-space:nowrap;">${row.dew_point_temp_c !== null ? row.dew_point_temp_c : '-'}</td>\n
+        <td style="padding:8px; white-space:nowrap;">${row.temperature_max_c !== null ? row.temperature_max_c : '-'}</td>\n
+        <td style="padding:8px; white-space:nowrap;">${row.temperature_min_c !== null ? row.temperature_min_c : '-'}</td>\n
+        <td style="padding:8px; white-space:nowrap;">${row.qff_mb !== null ? row.qff_mb : '-'}</td>\n
+        <td style="padding:8px; white-space:nowrap;">${row.qfe_mb !== null ? row.qfe_mb : '-'}</td>\n
+        <td style="padding:8px; white-space:nowrap;">${row.pressure_diff_3h_mb !== null ? row.pressure_diff_3h_mb: '-'}</td>\n
+        <td style="padding:8px; white-space:nowrap;">${row.pressure_diff_24h_mb !== null ? row.pressure_diff_24h_mb : '-'}</td>\n
+        <td style="padding:8px; white-space:nowrap;">${row.relative_humidity_pc !== null ? row.relative_humidity_pc : '-'}</td>\n
+        <td style="padding:8px; white-space:nowrap;">${row.wind_direction_deg !== null ? row.wind_direction_deg : '-'}</td>\n
+        <td style="padding:8px; white-space:nowrap;">${row.wind_speed_knot !== null ? row.wind_speed_knot : '-'}</td>\n
+        <td style="padding:8px; white-space:nowrap;">${row.rain_indicator_ir !== null ? row.rain_indicator_ir : '-'}</td>\n
+        <td style="padding:8px; white-space:nowrap;">${row.precipitation_3h_mm !== null ? row.precipitation_3h_mm : '-'}</td>\n
+        <td style="padding:8px; white-space:nowrap;">${row.precipitation_6h_mm !== null ? row.precipitation_6h_mm : '-'}</td>\n
+        <td style="padding:8px; white-space:nowrap;">${row.precipitation_24h_mm !== null ? row.precipitation_24h_mm : '-'}</td>\n
+      </tr>`;
+    });
+    
+    html += `</tbody>\n</table>\n</div>
+    <div style="padding:12px; font-size:11px; color:var(--text-secondary); border-top:1px solid var(--border); text-align:center">
+      <i class="fas fa-arrows-alt-h"></i> Geser tabel ke kanan/kiri untuk melihat semua data &nbsp;|&nbsp;
+      <i class="fas fa-chart-line"></i> Menampilkan ${data.count} dari ${data.limit} record
+    </div>`;
+    
+    container.innerHTML = html;
+    
+  } catch (err) {
+    container.innerHTML = `<div class="empty-state"><div class="icon">❌</div><p>Error: ${err.message}</p><p style="font-size:12px;margin-top:8px">Pastikan Bridge URL benar dan server dapat mengakses SSH ke 192.168.15.220</p></div>`;
+    resultInfo.style.display = 'none';
+  }
+}
+  
+  function clearAwsDigi() {
+    document.getElementById('aws-station-id').value = '';
+    document.getElementById('aws-limit').value = '10';
+    document.getElementById('awsdigi-table').innerHTML = `<div class="empty-state">
+      <div class="icon">🌤️</div>
+      <p>Masukkan ID Station (contoh: STW1011 atau STW) lalu klik Cari Data</p>
+      <p style="font-size:12px;margin-top:8px">Data yang ditampilkan adalah data hari ini (UTC) dari tabel synop</p>
+    </div>`;
+    document.getElementById('aws-result-info').style.display = 'none';
+  }
+
   // ==================== REPORT FUNCTIONS ====================
   async function loadReportData() {
     const container = document.getElementById('report-table');
@@ -808,7 +942,6 @@
       const data = await callApi('/query');
       reportCount.textContent = data.count;
       
-      // Update badge
       const badge = document.getElementById('badge-report');
       if (data.count > 0) {
         badge.style.display = 'inline-block';
@@ -822,7 +955,7 @@
         return;
       }
       
-      let html = `<table><thead><tr>
+      let html = `<div style="overflow-x:auto"><table><thead><tr>
         <th>ID</th><th>Report</th><th>Station</th><th>Periode</th>
         <th>Date Start</th><th>Date End</th><th>Duration</th>
         <th>Created At</th><th>User ID</th><th>Action</th>
@@ -850,11 +983,11 @@
           <td>${durationText}</td>
           <td>${formatTimestamp(row.at_create)}</td>
           <td>${escapeHtml(row.user_id)}</td>
-          <td><button class="btn btn-danger" style="padding:4px 8px;font-size:11px" onclick="showDeleteModal(${row.id}, '${escapeHtml(row.report).replace(/'/g, "\\'")}', '${escapeHtml(row.station).replace(/'/g, "\\'")}')">🗑️ Delete</button>
-         </tr>`;
+          <td><button class="btn btn-danger" style="padding:4px 8px;font-size:11px" onclick="showDeleteModal(${row.id}, '${escapeHtml(row.report).replace(/'/g, "\\'")}', '${escapeHtml(row.station).replace(/'/g, "\\'")}')">🗑️ Delete</button></td>
+        </tr>`;
       });
       
-      html += `</tbody></table>`;
+      html += `</tbody></table></div>`;
       container.innerHTML = html;
       
     } catch (err) {
@@ -872,7 +1005,6 @@
       const data = await callApi('/cek-session');
       sessionCount.textContent = data.count;
       
-      // Update badge
       const badge = document.getElementById('badge-session');
       if (data.count > 0) {
         badge.style.display = 'inline-block';
@@ -886,7 +1018,7 @@
         return;
       }
       
-      let html = `<table><thead><tr>
+      let html = `<div style="overflow-x:auto"><table><thead><tr>
         <th>PID</th><th>User</th><th>Database</th><th>Duration</th>
         <th>Started</th><th>Query Preview</th>
       </tr></thead><tbody>`;
@@ -896,7 +1028,7 @@
         const totalSec = (dur.minutes * 60) + dur.seconds;
         let durClass = totalSec >= 1800 ? 'badge-pending' : '';
         const durText = `${dur.minutes}m ${dur.seconds}s`;
-        const queryPreview = (s.query || '').substring(0, 100);
+        const queryPreview = (s.query || '').substring(0, 10);
         
         html += `<tr>
           <td><strong>${s.pid}</strong></td>
@@ -905,10 +1037,10 @@
           <td><span class="badge ${durClass}">${durText}</span></td>
           <td>${formatTimestamp(s.query_start)}</td>
           <td><pre style="margin:0;font-size:11px;max-width:300px;overflow:hidden">${escapeHtml(queryPreview)}...</pre></td>
-         </tr>`;
+        </tr>`;
       });
       
-      html += `</tbody><table>`;
+      html += `</tbody></table></div>`;
       container.innerHTML = html;
       
     } catch (err) {
@@ -972,36 +1104,41 @@
   function switchBridgeTab(tab) {
     currentTab = tab;
     
-    // Update active class di nav items
     document.querySelectorAll('.nav-item').forEach(item => {
       item.classList.remove('active');
     });
-    document.querySelector(`[data-tab="${tab}"]`).classList.add('active');
     
-    // Tampilkan section yang sesuai
-    document.getElementById('report-section').style.display = tab === 'report' ? 'block' : 'none';
-    document.getElementById('session-section').style.display = tab === 'session' ? 'block' : 'none';
+    // Find the button with matching data-tab
+    const targetBtn = document.querySelector(`[data-tab="${tab}"]`);
+    if (targetBtn) targetBtn.classList.add('active');
     
-    // Update header subtitle
-    const titles = {
-      report: 'Report Data Management',
-      session: 'Session Monitoring'
-    };
-    document.getElementById('header-subtitle').textContent = titles[tab] || 'Bridge Monitor';
+    // Hide all sections
+    document.getElementById('report-section').classList.remove('active');
+    document.getElementById('session-section').classList.remove('active');
+    document.getElementById('awsdigi-section').classList.remove('active');
     
-    // Load data sesuai tab
+    // Show selected section
     if (tab === 'report') {
+      document.getElementById('report-section').classList.add('active');
+      document.getElementById('header-subtitle').textContent = 'Report Data Management';
       loadReportData();
-    } else {
+    } else if (tab === 'session') {
+      document.getElementById('session-section').classList.add('active');
+      document.getElementById('header-subtitle').textContent = 'Session Monitoring';
       loadSessionData();
+    } else if (tab === 'awsdigi') {
+      document.getElementById('awsdigi-section').classList.add('active');
+      document.getElementById('header-subtitle').textContent = 'AWS Digi - Data Synop';
     }
   }
 
   function refreshCurrentTab() {
     if (currentTab === 'report') {
       loadReportData();
-    } else {
+    } else if (currentTab === 'session') {
       loadSessionData();
+    } else if (currentTab === 'awsdigi') {
+      searchAwsDigi();
     }
   }
 
@@ -1013,8 +1150,6 @@
     html.setAttribute('data-theme', newTheme);
     const icon = document.getElementById('theme-icon');
     icon.className = newTheme === 'dark' ? 'fas fa-sun' : 'fas fa-moon';
-    
-    // Simpan ke localStorage
     localStorage.setItem('theme', newTheme);
   }
 
@@ -1025,21 +1160,6 @@
     document.querySelectorAll('.clock').forEach(el => {
       if (el) el.textContent = timeString;
     });
-  }
-
-  // ==================== FTP STATUS SIMULASI ====================
-  function updateFTPStatus() {
-    const ftp1 = document.getElementById('sb-ftp1');
-    const ftp2 = document.getElementById('sb-ftp2');
-    
-    if (ftp1) {
-      ftp1.innerHTML = '<i class="fas fa-circle"></i><span>Online</span>';
-      ftp1.className = 'status-value online';
-    }
-    if (ftp2) {
-      ftp2.innerHTML = '<i class="fas fa-circle"></i><span>Online</span>';
-      ftp2.className = 'status-value online';
-    }
   }
 
   // ==================== MOBILE MENU ====================
@@ -1057,7 +1177,6 @@
   });
 
   // ==================== INITIALIZATION ====================
-  // Load theme dari localStorage
   const savedTheme = localStorage.getItem('theme');
   if (savedTheme) {
     document.documentElement.setAttribute('data-theme', savedTheme);
@@ -1065,24 +1184,20 @@
     if (icon) icon.className = savedTheme === 'dark' ? 'fas fa-sun' : 'fas fa-moon';
   }
   
-  // Get tab from URL parameter
   const urlParams = new URLSearchParams(window.location.search);
   const initialTab = urlParams.get('tab');
   
-  // Start dengan tab yang sesuai
   if (initialTab === 'session') {
     switchBridgeTab('session');
+  } else if (initialTab === 'awsdigi') {
+    switchBridgeTab('awsdigi');
   } else {
     switchBridgeTab('report');
   }
   
-  // Auto test connection
   setTimeout(testConnection, 500);
-  
-  // Update clock setiap detik
   setInterval(updateClock, 1000);
   updateClock();
-  updateFTPStatus();
 
   // Expose functions to global
   window.navigateToDashboard = navigateToDashboard;
@@ -1096,6 +1211,8 @@
   window.switchBridgeTab = switchBridgeTab;
   window.refreshCurrentTab = refreshCurrentTab;
   window.toggleTheme = toggleTheme;
+  window.searchAwsDigi = searchAwsDigi;
+  window.clearAwsDigi = clearAwsDigi;
 </script>
 </body>
 </html>
